@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import timedelta, date, time
 from django.shortcuts import get_object_or_404
 from rest_framework.response import Response
@@ -46,26 +47,25 @@ class CreateUserView(APIView):
         emp_num = request.data.get("emp_num")
         name = request.data.get("name")
         department = request.data.get("department") 
-        designation = request.data.get("designation")
-        email = request.data.get("email")  # Allow manual password entry
+        designation_id = request.data.get("designation")  # Get designation ID
+        community_id = request.data.get("community")  # Get community ID
+        email = request.data.get("email")  
         hire_date = request.data.get("hire_date")
-        password = request.data.get("password")  # Manually enter hire_date
-        username = email  # Use email as username
+        password = request.data.get("password")  
+        username = email  
 
         # Get the current user's role
         current_role = getattr(request.user, "role", "").lower() if request.user else None
 
-        # Determine the role to assign based on the creator's role
         if current_role == "admin":
-            new_user_role = "hr"  # Admin can only create HR users
+            new_user_role = "hr"
         elif current_role == "hr":
-            new_user_role = "employee"  # HR can only create Employee users
+            new_user_role = "employee"
         else:
             return Response({"error": "You do not have permission to create users"}, status=status.HTTP_403_FORBIDDEN)
 
-        # Ensure all required fields are provided
-        if not all([email, department, name, emp_num, hire_date]):
-            return Response({"error": "All fields (email, department, name, emp_num, hire_date) are required"}, status=status.HTTP_400_BAD_REQUEST)
+        if not all([email, department, name, emp_num, hire_date, designation_id, community_id]):
+            return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Validate hire_date format
         try:
@@ -73,38 +73,38 @@ class CreateUserView(APIView):
         except ValueError:
             return Response({"error": "Invalid hire_date format. Use YYYY-MM-DD"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if email is already in use
         if User.objects.filter(email=email).exists():
             return Response({"error": "User with this email already exists"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if emp_num is unique
         if Employee.objects.filter(emp_num=emp_num).exists():
             return Response({"error": "Employee Number already exists"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Generate a random password if not provided
+        # Retrieve the selected designation
+        designation_obj = get_object_or_404(Designation, id=designation_id)
+        community_obj = get_object_or_404(Community, id=community_id)
+
         if not password:
-            password = get_random_string(length=10)  # Generate a 10-character random password
+            password = get_random_string(length=10)
 
         try:
-            with transaction.atomic():  # Ensure database consistency
-                # Create the new user with the assigned role
+            with transaction.atomic():
                 user = User.objects.create(
                     email=email,
-                    password=make_password(password),  # Hash the password before saving
-                    role=new_user_role,  # Automatically assigned based on creator's role
+                    password=make_password(password),
+                    role=new_user_role,
                     department=department,
                     username=username
                 )
-                designation = Designation.objects.create(desig_name=designation)
 
-                # Create Employee record if applicable
-                if new_user_role in ["employee", "hr"]:
-                    Employee.objects.create(
-                        user=user,
-                        name=name,
-                        emp_num=emp_num,
-                        hire_date=hire_date  # Manually entered
-                    )
+                # Create Employee record
+                Employee.objects.create(
+                    user=user,
+                    name=name,
+                    emp_num=emp_num,
+                    hire_date=hire_date,
+                    designation=designation_obj,
+                    community=community_obj # Assign existing designation
+                )
 
                 # Send email with login credentials
                 subject = "Your Account Has Been Created"
@@ -402,35 +402,30 @@ class AttendanceStatsView(APIView):
         }, status=status.HTTP_200_OK)
 
 ###############     Leave request view  ##################
-logger = logging.getLogger('leave')
-
 class LeaveRequestListView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        """Retrieve all pending leave requests submitted by employees, accessible only by HR."""
         try:
-            logger.info(f"User role: {request.user.role}")  # Debug log
-            
-            # If Admin, show only leave requests where the employee is an HR
-            if request.user.role.lower() == "admin":
-                leave_requests = LeaveRequest.objects.all()#filter(employee__user__role="hr" and "admin")
+            if request.user.role.lower() != "admin":
+                return Response(
+                    {"error": "Access denied! Only Admin can manage pending leave requests."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
 
-            # If HR, show all leave requests
-            elif request.user.role.lower() == "hr":
-                leave_requests = LeaveRequest.objects.all()
+            # Fetch leave requests that are pending and submitted by employees
+            pending_leaves = LeaveRequest.objects.filter(
+                employee__user__role="hr", status="Pending"
+            )
 
-            # Employees should only see their own leave requests
-            else:
-                leave_requests = LeaveRequest.objects.filter(employee__user=request.user)
+            # Serialize the data
+            serializer = LeaveRequestSerializer(pending_leaves, many=True)
 
-            logger.info(f"Leave Requests: {leave_requests}")  # Log queryset
-
-            serializer = LeaveRequestSerializer(leave_requests, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         except Exception as e:
-            logger.error(f"Error fetching leave requests: {e}")  # Log error
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 ###############     leave approve or reject #################
@@ -637,76 +632,44 @@ class WorkTimePolicyDetailView(viewsets.ModelViewSet):
 
 ########### Holiday policy creation & updation  ############
 
-class PublicHolidayViewSet(viewsets.ModelViewSet):
-    queryset = PublicHoliday.objects.all()
-    serializer_class = PublicHolidaySerializer
-    filter_backends = [filters.SearchFilter]
-    search_fields = ['name', 'leave_type__leave', 'status']
+class PublicHolidayView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        """
-        Filters public holidays based on leave type and status.
-        Example usage:
-        `/api/public-holidays/?leave_type=public`
-        `/api/public-holidays/?status=active`
-        """
-        queryset = super().get_queryset()
-        leave_type_param = self.request.query_params.get('leave_type')
-        status_param = self.request.query_params.get('status')
-
-        if leave_type_param:
-            queryset = queryset.filter(leave_type__leave__iexact=leave_type_param)
-
-        if status_param:
-            queryset = queryset.filter(status__iexact=status_param)
-
-        return queryset
-        
-    def create(self, request, *args, **kwargs):
-        mutable_data = request.data.copy()  # Make a mutable copy of request data
-
-        leave_type_name = mutable_data.get("leave_type")
-
-        if not leave_type_name:
-            raise ValidationError({"leave_type": "This field is required."})
-
-        # Check if the leave type exists in the LeaveType model
-        try:
-            leave_type = LeaveType.objects.get(leave=leave_type_name)
-        except LeaveType.DoesNotExist:
-            raise ValidationError({"leave_type": "Selected leave type does not exist. Please create it first."})
-
-        # Assign the ID of the existing leave type
-        mutable_data["leave_type"] = leave_type.id  
-
-        # Manually call the serializer with the updated data
-        serializer = self.get_serializer(data=mutable_data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-class LeaveTypeViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint for managing Leave Types.
-    """
-    queryset = LeaveType.objects.all()
-    serializer_class = LeaveTypeSerializer
-
-    def get_queryset(self):
-        return LeaveType.objects.all()
-
-    def create(self, request, *args, **kwargs):
-        """
-        Handles creating a new leave type.
-        """
-        serializer = self.get_serializer(data=request.data)
+    def post(self, request):
+        """Create a new Public Holiday Policy"""
+        serializer = PublicHolidaySerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
-            return Response(
-                {"message": "Leave type created successfully", "data": serializer.data},
-                status=status.HTTP_201_CREATED
-            )
+            return Response({"message": "Public holiday policy created successfully!", "data": serializer.data}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self, request):
+        """Retrieve Public Holidays, with optional year filtering"""
+        year = request.query_params.get("year")
+        
+        holidays = PublicHoliday.objects.all()
+
+        if year:
+            try:
+                year = int(year)
+                holidays = holidays.filter(date__year=year)
+            except ValueError:
+                return Response({"error": "Invalid year format!"}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = PublicHolidaySerializer(holidays, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class LeaveTypeCreateView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """Create a new public holiday leave type"""
+        serializer = LeaveTypeSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "Public holiday leave type created successfully!", "data": serializer.data}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 #################   logout  ##############
@@ -811,6 +774,16 @@ class LeaveRequestView(APIView):
             if start_date > end_date:
                 return Response({"error": "start_date cannot be after end_date!"}, status=status.HTTP_400_BAD_REQUEST)
 
+            # ✅ Check if employee already has a leave request on this date
+            overlapping_requests = LeaveRequest.objects.filter(
+                employee=employee,
+                start_date__lte=end_date,
+                end_date__gte=start_date
+            ).exists()
+
+            if overlapping_requests:
+                return Response({"error": "You already have a leave request for this date range!"}, status=status.HTTP_400_BAD_REQUEST)
+
             # ✅ Fetch Leave Policy (Instead of LeaveType)
             leave_policy = get_object_or_404(LeavePolicy, id=leave_type_id)
             leave_type = leave_policy.leave_type  # ✅ Extract the leave type
@@ -858,32 +831,37 @@ class LeaveRequestView(APIView):
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
+
     def get(self, request):
+        """Get all leave requests for the authenticated employee."""
         try:
             employee = request.user.employee
             leave_requests = LeaveRequest.objects.filter(employee=employee).order_by("-start_date")
 
+            if not leave_requests.exists():
+                return Response({"message": "No leave requests found."}, status=status.HTTP_200_OK)
+
             data = [
                 {
-                    "id": lr.id,
-                    "leave_type": lr.leave_policy.leave_type if isinstance(lr.leave_policy.leave_type, str) else lr.leave_policy.leave_type.name,
-                    "start_date": lr.start_date,
-                    "end_date": lr.end_date,
-                    "status": lr.status,
-                    "reason": lr.reason,
-                    "cancellation_request": lr.cancellation_request,
-                    "image": request.build_absolute_uri(lr.image.url) if lr.image else None,
+                    "id": leave.id,
+                    "start_date": leave.start_date,
+                    "end_date": leave.end_date,
+                    "leave_type": leave.leave_policy.leave_type,  # Fixed here
+                    "status": leave.status,
+                    "reason": leave.reason,
+                    
                 }
-                for lr in leave_requests
+                for leave in leave_requests
             ]
 
             return Response(data, status=status.HTTP_200_OK)
 
         except Employee.DoesNotExist:
             return Response({"error": "Employee record not found"}, status=status.HTTP_404_NOT_FOUND)
-
-
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 class LeaveTypeListView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -930,19 +908,42 @@ class LeaveBalanceSummaryView(APIView):
         try:
             employee = request.user.employee
 
-            # Get all leave balances for the employee
+            # ✅ Fetch leave balances correctly
             leave_balances = LeaveBalance.objects.filter(employee=employee)
 
-            # Calculate total leave and used leave
+            # ✅ Get the total leave from LeaveBalance table
             total_leave = sum(lb.total for lb in leave_balances)
-            used_leave = sum(lb.used for lb in leave_balances)
-            available_leave = total_leave - used_leave  # Remaining leave
+            available_leave = sum(lb.total - lb.used for lb in leave_balances)  
 
-            # Prepare response data
+            # ✅ Fetch approved, pending, rejected, and canceled leave requests
+            approved_leaves = LeaveRequest.objects.filter(employee=employee, status="Approved")
+            pending_leaves = LeaveRequest.objects.filter(employee=employee, status="Pending")
+            rejected_leaves = LeaveRequest.objects.filter(employee=employee, status="Rejected")
+            canceled_leaves = LeaveRequest.objects.filter(employee=employee, status="Cancelled")
+
+            # ✅ Sum leave days correctly
+            approved_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in approved_leaves)
+            pending_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in pending_leaves)
+            refunded_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in canceled_leaves)
+            rejected_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in rejected_leaves)  
+
+            # ✅ Ensure available leave is adjusted when rejected leaves are added back
+            adjusted_available_leave = available_leave + rejected_leave_days  
+
+            # ✅ Fix: Calculate used leave based on approved leave requests instead of LeaveBalance
+            used_leave = approved_leave_days  
+
             data = {
                 "total_leave": total_leave,
-                "used_leave": used_leave,
-                "available_leave": available_leave
+                "used_leave": used_leave,  # ✅ Now fetched from approved leaves
+                "pending_leave": pending_leave_days,
+                "refunded_leave": refunded_leave_days,
+                "rejected_leave": rejected_leave_days,
+                "available_leave": adjusted_available_leave,  
+                "overall_summary": {
+                    "total_leaves_used": used_leave + pending_leave_days - refunded_leave_days,
+                    "total_remaining_leaves": adjusted_available_leave,
+                },
             }
 
             return Response(data, status=status.HTTP_200_OK)
@@ -954,6 +955,7 @@ class LeaveBalanceSummaryView(APIView):
 
 class LeaveCancellationRequestView(APIView):
     permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
 
     def put(self, request, leave_id):
         """Employee requests leave cancellation (Needs HR approval)"""
@@ -962,11 +964,20 @@ class LeaveCancellationRequestView(APIView):
                 id=leave_id, employee=request.user.employee, status="Approved"
             )
         except LeaveRequest.DoesNotExist:
-            return Response({"error": "Leave request not found or cannot be cancelled!"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Leave request not found or cannot be cancelled!"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        # Update leave to pending cancellation
+        # Get the cancellation reason from request data
+        cancellation_reason = request.data.get("cancellation_reason", "").strip()
+        if not cancellation_reason:
+            return Response({"error": "Cancellation reason is required!"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Update leave request with cancellation details
         leave_request.cancellation_request = True
         leave_request.status = "Cancellation Pending"
+        leave_request.cancellation_reason = cancellation_reason
         leave_request.save()
 
         # Create leave transaction entry
@@ -974,28 +985,41 @@ class LeaveCancellationRequestView(APIView):
             employee=request.user.employee,
             transaction_type="Cancellation Request",
             date=date.today(),
-            pending=True
+            pending=True,
+            leave_policy=leave_request.leave_policy  # Ensure leave_policy is assigned
         )
 
-        return Response({"message": "Leave cancellation request submitted successfully!"}, status=status.HTTP_200_OK)
-
+        return Response(
+            {"message": "Leave cancellation request submitted successfully!"},
+            status=status.HTTP_200_OK
+        ) 
+    
 ###############     HR leave cancellation view  #################################
 
 class LeaveCancellationApprovalView(APIView):
     permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
 
     def put(self, request, leave_id):
         """HR approves or rejects leave cancellation"""
-        if request.user.role != "HR":
+
+        if request.user.role.lower() != "hr":
             return Response({"error": "Unauthorized action!"}, status=status.HTTP_403_FORBIDDEN)
 
         decision = request.data.get("decision")  # Accept or Reject
+
+        # ✅ Add this validation
+        if not decision:
+            return Response({"error": "Missing 'decision' in request body!"}, status=status.HTTP_400_BAD_REQUEST)
+
+        decision = decision.lower()
+
         try:
             leave_request = LeaveRequest.objects.get(id=leave_id, status="Cancellation Pending")
         except LeaveRequest.DoesNotExist:
             return Response({"error": "Cancellation request not found!"}, status=status.HTTP_404_NOT_FOUND)
 
-        if decision.lower() == "approve":
+        if decision == "approve":
             leave_request.status = "Cancelled"
             leave_request.save()
 
@@ -1003,7 +1027,8 @@ class LeaveCancellationApprovalView(APIView):
             requested_days = (leave_request.end_date - leave_request.start_date).days + 1
             leave_balance = LeaveBalance.objects.filter(employee=leave_request.employee).first()
             if leave_balance:
-                leave_balance.available_days += requested_days
+                leave_balance.total += requested_days  # ✅ Increase total leave
+                leave_balance.used -= requested_days  # ✅ Reduce used leave (if applicable)
                 leave_balance.save()
 
             # Update transaction as completed
@@ -1011,13 +1036,14 @@ class LeaveCancellationApprovalView(APIView):
                 employee=leave_request.employee,
                 transaction_type="Leave Cancellation Approved",
                 date=date.today(),
-                credit=requested_days
+                credit=requested_days,
+                leave_policy=leave_request.leave_policy  # ✅ Fix: Add leave policy
             )
 
             return Response({"message": "Leave cancellation approved successfully!"}, status=status.HTTP_200_OK)
 
-        elif decision.lower() == "reject":
-            leave_request.status = "Approved"  # Revert back to approved leave
+        elif decision == "reject":
+            leave_request.status = "Cancellation Rejected"  # Revert back to approved leave
             leave_request.cancellation_request = False
             leave_request.save()
 
@@ -1026,13 +1052,15 @@ class LeaveCancellationApprovalView(APIView):
                 employee=leave_request.employee,
                 transaction_type="Leave Cancellation Rejected",
                 date=date.today(),
-                pending=False
+                pending=False,
+                leave_policy=leave_request.leave_policy  # ✅ Fix: Add leave policy
             )
 
             return Response({"message": "Leave cancellation rejected!"}, status=status.HTTP_200_OK)
 
         return Response({"error": "Invalid decision value!"}, status=status.HTTP_400_BAD_REQUEST)
 
+    
 ################    employee overtime view  #####################
 from django.db.models.functions import TruncMonth
 class OvertimeStatsView(APIView):
@@ -1334,24 +1362,39 @@ class EmployeeShiftView(APIView):
     permission_classes = [permissions.IsAuthenticated]  # Only logged-in employees can view shifts
 
     def get(self, request):
-        date = request.GET.get("date")
-        shift_assignment = EmployeeShiftAssignment.objects.filter(employee=request.user, date=date).select_related(
-            "shift").first()
+        date_str = request.GET.get("date")
+        
+        # Validate and parse the date
+        if date_str:
+            shift_date = parse_date(date_str)
+            if not shift_date:
+                return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+        else:
+            shift_date = date.today()  # Default to today's date if not provided
+
+        try:
+            employee = request.user.employee  # Fetch the related Employee instance
+        except Employee.DoesNotExist:
+            return Response({"error": "Employee record not found"}, status=404)
+
+        shift_assignment = EmployeeShiftAssignment.objects.filter(
+            employee=employee, date=shift_date
+        ).select_related("shift").first()
 
         if shift_assignment:
             shift_data = {
-                "date": date,
+                "date": shift_date,
                 "shift": shift_assignment.shift.shift_type,
                 "start_time": shift_assignment.shift.start_time,
                 "end_time": shift_assignment.shift.end_time
             }
-            return Response(shift_data)
-
+            return Response(shift_data, status=200)
+#http://0.0.0.0:8000/empshiftview/?date=2025-03-20 pass in this format
         return Response({"message": "No shift assigned for this date"}, status=404)
 
 class ShiftRosterView(APIView):
+    permission_classes = [permissions.IsAuthenticated]  # Only HR/Admin can view shift rosters
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAdminUser]  # Only HR/Admin can view shift rosters
 
     def get(self, request):
         roster_id = request.GET.get("roster_id")
@@ -1371,6 +1414,7 @@ class ShiftRosterView(APIView):
             for shift in shifts
         ]
         return Response(data)
+#http://0.0.0.0:8000/empshiftroster/?roster_id=1 pass in this format
 
 ############    employee profile    ##################################
 
@@ -1416,6 +1460,7 @@ class EmployeeProfileView(APIView):
 
 class ChangePasswordView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
 
     def patch(self, request):
         user = request.user
@@ -1456,36 +1501,48 @@ class ChangePasswordView(APIView):
 
 ###############     employee leave balance and history  ################
 
-class EmployeeLeaveBalanceView(generics.RetrieveAPIView):
-    queryset = Employee.objects.all()
-    serializer_class = EmployeeLeaveBalanceSerializer
+class EmployeeLeaveBalanceView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-
-    def get_queryset(self):
-        return Employee.objects.filter(id=self.kwargs["pk"])
-
-class LeaveHistoryView(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        employee = request.user.employee  # Get logged-in employee
+        employee = get_object_or_404(Employee, user=request.user)
+        leave_balances = LeaveBalance.objects.filter(employee=employee)
 
-        # Fetch all leave transactions (approved leaves taken)
-        leave_history = LeaveTransaction.objects.filter(employee=employee, debit__gt=0).order_by("-date")
+        leave_data = []
 
-        # Formatting response
-        history_data = []
-        for leave in leave_history:
-            leave_type = leave.leave_policy if leave.leave_policy else None
-            history_data.append({
-                "leave_type": leave_type.leave_type if leave_type else "Unknown",
-                "date": leave.date.strftime("%d %B"),  # Example: "05 June"
-                "days": leave.debit,
+        for leave in leave_balances:
+            used = leave.used  # ✅ Correct field
+            total = leave.total  # ✅ Correct field
+            leave_policy = leave.leave_policy  # ✅ Fetch LeavePolicy
+            leave_type = leave_policy.leave_type  # ✅ Get leave type name
+
+            # Handle unlimited/unpaid leave (represented as ∞)
+            total_display = "∞" if total == float("inf") else total
+
+            # ✅ Fetch only approved and non-canceled leave requests
+            leave_requests = LeaveRequest.objects.filter(
+                employee=employee,
+                leave_policy=leave_policy,  # ✅ Correct filter
+                status="Approved" or "approved",
+                cancellation_request=False  # ✅ Exclude canceled leave requests
+            )
+
+            # ✅ Extract start and end dates
+            leave_dates = [
+                {"start_date": leave.start_date, "end_date": leave.end_date} for leave in leave_requests
+            ]
+
+            # ✅ Log results for debugging
+            print(f"Leave Type: {leave_type}, Found Leaves: {leave_requests.count()}, Dates: {leave_dates}")
+
+            leave_data.append({
+                "name": leave_type,
+                "used": f"{used}/{total_display} Used",
+                "dates": leave_dates  # ✅ Send full leave duration
             })
 
-        return Response({"leave_history": history_data}, status=200)
+        return Response({"leave_balance": leave_data}, status=200)
 
 ############    policy view ###############
 
@@ -1517,6 +1574,59 @@ class PolicyListView(APIView):
 
 ################    HR dashboard    ###############
 
+# class HRDashboardView(APIView):
+#     authentication_classes = [JWTAuthentication]
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+#         today = now().date()
+
+#         # Total employees
+#         total_employees = Employee.objects.filter(Q(user__role="Employee") | Q(user__role="employee"))
+#         serialized_employees = EmployeeSerializers(total_employees, many=True).data
+
+#         # Employees on leave today
+#         on_leave_today = LeaveRequest.objects.filter(
+#             start_date__lte=today, end_date__gte=today, status="approved"
+#         ).count()
+
+#         # Pending leave requests
+#         pending_leave_requests = LeaveRequest.objects.filter(status__iexact="pending").count()
+
+#         # Attendance requests pending approval
+#         attendance_requests = AttendanceRequest.objects.filter(status__iexact="pending").count()
+
+#         # Leave cancellations requested
+#         leave_cancellations = LeaveRequest.objects.filter(status__iexact="Cancellation Pending").count()
+
+#         # Attendance statistics for the particular day
+#         present_today = Attendance.objects.filter(date=today, status="present").count()
+#         absent_today = Attendance.objects.filter(date=today, status="absent").count()
+#         late_today = Attendance.objects.filter(date=today, status="late").count()
+
+#         # Get check-in and check-out times for present employees
+#         present_attendance = Attendance.objects.filter(date=today, status="present").select_related("employee")
+
+#         attendance_data = []
+#         for record in present_attendance:
+#             attendance_data.append({
+#                 "employee": record.employee.user.username,  # Adjust based on your User model
+#                 "check_in": record.check_in.strftime("%H:%M:%S") if record.check_in else "N/A",
+#                 "check_out": record.check_out.strftime("%H:%M:%S") if record.check_out else "N/A",
+#             })
+
+#         return Response({
+#             "total_employees": serialized_employees,
+#             "on_leave_today": on_leave_today,
+#             "leave_requests": pending_leave_requests,  # Changed from pending_leave_requests
+#             "attendance_request": attendance_requests, # Changed to match frontend
+#             "leave_cancellations": leave_cancellations,
+#             "present": present_today,  # Flattened from attendance_statistics
+#             "absent": absent_today,    # Flattened from attendance_statistics
+#             "late": late_today,        # Flattened from attendance_statistics
+#             "attendance_data": attendance_data  # Added check-in & check-out times
+#         }, status=200)
+
 class HRDashboardView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -1525,7 +1635,8 @@ class HRDashboardView(APIView):
         today = now().date()
 
         # Total employees
-        total_employees = Employee.objects.filter(user__role="Employee" or "employee").count()
+        total_employees = Employee.objects.filter(Q(user__role="Employee") | Q(user__role="employee"))
+        serialized_employees = EmployeeSerializers(total_employees, many=True).data
 
         # Employees on leave today
         on_leave_today = LeaveRequest.objects.filter(
@@ -1539,24 +1650,56 @@ class HRDashboardView(APIView):
         attendance_requests = AttendanceRequest.objects.filter(status__iexact="pending").count()
 
         # Leave cancellations requested
-        leave_cancellations = LeaveRequest.objects.filter(status__iexact="cancellation_requested").count()
+        leave_cancellations = LeaveRequest.objects.filter(status__iexact="Cancellation Pending").count()
 
-        # ✅ Attendance statistics for the particular day
+        # Attendance statistics for today
         present_today = Attendance.objects.filter(date=today, status="present").count()
         absent_today = Attendance.objects.filter(date=today, status="absent").count()
         late_today = Attendance.objects.filter(date=today, status="late").count()
 
-        return Response({
-            "total_employees": total_employees,
-            "on_leave_today": on_leave_today,
-            "leave_requests": pending_leave_requests,  # Changed from pending_leave_requests
-            "attendance_request": attendance_requests, # Changed to match frontend
-            "leave_cancellations": leave_cancellations,
-            "present": present_today,  # Flattened from attendance_statistics
-            "absent": absent_today,    # Flattened from attendance_statistics
-            "late": late_today         # Flattened from attendance_statistics
-        },status=200)
+        # Get check-in and check-out times for present employees
+        present_attendance = Attendance.objects.filter(date=today, status="present").select_related("employee")
 
+        attendance_data = []
+        for record in present_attendance:
+            attendance_data.append({
+                "employee": record.employee.user.username,  # Adjust based on your User model
+                "check_in": record.check_in.strftime("%H:%M:%S") if record.check_in else "N/A",
+                "check_out": record.check_out.strftime("%H:%M:%S") if record.check_out else "N/A",
+            })
+
+        # **Weekly Attendance Statistics (Last 7 Days)**
+        start_date = today - timedelta(days=6)  # Get last 7 days
+        weekly_attendance = Attendance.objects.filter(date__range=[start_date, today]).values("date", "status").annotate(count=Count("id"))
+
+        # Organize data for graph representation
+        weekly_stats = defaultdict(lambda: {"present": 0, "absent": 0, "late": 0})
+        for entry in weekly_attendance:
+            weekly_stats[entry["date"]][entry["status"]] = entry["count"]
+
+        weekly_attendance_data = [
+            {
+                "date": (start_date + timedelta(days=i)).strftime("%Y-%m-%d"),
+                "present": weekly_stats[start_date + timedelta(days=i)]["present"],
+                "absent": weekly_stats[start_date + timedelta(days=i)]["absent"],
+                "late": weekly_stats[start_date + timedelta(days=i)]["late"],
+            }
+            for i in range(7)  # Loop through last 7 days
+        ]
+
+        return Response({
+            "total_employees": serialized_employees,
+            "on_leave_today": on_leave_today,
+            "leave_requests": pending_leave_requests,  
+            "attendance_request": attendance_requests, 
+            "leave_cancellations": leave_cancellations,
+            "present": present_today,  
+            "absent": absent_today,    
+            "late": late_today,        
+            "attendance_data": attendance_data,  
+            "weekly_attendance": weekly_attendance_data,  # Added Weekly Attendance Stats
+        }, status=200)
+    
 ##################  HR employee view    ##########################
 
 class EmployeeDetailView(generics.ListAPIView):
@@ -1581,26 +1724,431 @@ class ManualAttendanceView(generics.CreateAPIView):
             return Response({"message": "Attendance recorded successfully", "data": serializer.data}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-########### hr employee add ###################
-
-class EmployeeCreateView(generics.CreateAPIView):
-    queryset = Employee.objects.all()
-    serializer_class = EmployeeAddSerializer
-
-    # def post(self, request, *args, **kwargs):
-    #     serializer = self.get_serializer(data=request.data)
-    #     if serializer.is_valid():
-    #         employee = serializer.save()
-    #         return Response({"message": "Employee created successfully", "id": employee.id}, status=status.HTTP_201_CREATED)
-    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 #########   hr requests leave for employee    #####################
+from rest_framework.parsers import MultiPartParser, FormParser
 
-class LeaveRequestCreateView(generics.CreateAPIView):
-    queryset = LeaveRequest.objects.all()
-    serializer_class = HRLeaveRequestSerializer
-    permission_classes = [IsAuthenticated] 
-    authentication_classes = [JWTAuthentication] 
+class HRRequestLeaveView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]  
+
+    def post(self, request, *args, **kwargs):
+        """HR requests leave for an employee (JSON format)."""
+        if request.user.role.lower() != "hr":
+            return Response({"error": "Only HR can request leave for employees."}, status=status.HTTP_403_FORBIDDEN)
+
+        # Extract JSON data
+        data = request.data  
+        employee_id = data.get("employee")
+        leave_policy_id = data.get("leave_policy")  
+        start_date = data.get("start_date")
+        end_date = data.get("end_date")
+        reason = data.get("reason")
+        image = data.get("image")  # Expecting a base64 encoded string or image URL
+
+        if not all([employee_id, leave_policy_id, start_date, end_date, reason]):
+            return Response({"error": "All fields except image are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate employee
+        employee = get_object_or_404(Employee, id=employee_id)
+
+        # Validate leave policy
+        leave_policy = get_object_or_404(LeavePolicy, id=leave_policy_id)
+
+        # Create leave request
+        leave_request = LeaveRequest.objects.create(
+            employee=employee,
+            leave_policy=leave_policy,  
+            start_date=start_date,
+            end_date=end_date,
+            reason=reason,
+            status="Accepted", 
+        )
+
+        # Handle Image (Optional)
+        if image:
+            leave_request.image = image  
+            leave_request.save()
+
+        serializer = LeaveRequestSerializer(leave_request)
+        return Response({"message": "Leave request submitted successfully.", "data": serializer.data}, status=status.HTTP_201_CREATED)
+
+class LeaveTypeDropdownView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        employee_id = request.query_params.get("employee_id")  # Get employee_id from query param
+
+        if not employee_id:
+            return Response({"error": "Employee ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            employee = Employee.objects.get(id=employee_id)
+
+            # Get available leave types based on the leave balance
+            leave_balances = LeaveBalance.objects.filter(employee=employee).annotate(
+                balance=F("total") - F("used")
+            ).filter(balance__gt=0)
+
+            available_leave_types = [
+                {"id": lb.leave_policy.id, "leave_type": lb.leave_policy.leave_type} for lb in leave_balances
+            ]
+
+            return Response(available_leave_types, status=status.HTTP_200_OK)
+
+        except Employee.DoesNotExist:
+            return Response({"error": "Invalid Employee ID"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+################    HR leave request view    ####################
+class ApproveRejectLeaveView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request, leave_id):
+        leave_request = get_object_or_404(LeaveRequest, id=leave_id)
+
+        action = request.data.get("action")  # Either "approve" or "reject"
+        reject_reason = request.data.get("reject_reason", "")
+
+        if action == "approve":
+            leave_request.status = "Approved"
+            leave_request.reject_reason = ""
+        elif action == "reject":
+            leave_request.status = "Rejected"
+            leave_request.reject_reason = reject_reason
+
+        leave_request.save()
+        return Response({"message": f"Leave {action}d successfully!"}, status=200)
+    
+class PendingLeaveRequestsView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        """Retrieve all pending leave requests submitted by employees, accessible only by HR."""
+        try:
+            if request.user.role.lower() != "hr":
+                return Response(
+                    {"error": "Access denied! Only HR can manage pending leave requests."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Fetch leave requests that are pending and submitted by employees
+            pending_leaves = LeaveRequest.objects.filter(
+                employee__user__role="employee", status="Pending"
+            )
+
+            # Serialize the data
+            serializer = LeaveRequestSerializer(pending_leaves, many=True)
+
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+##############      HR leave cancellation view  #####################
+
+class ApproveRejectCancellationView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request, leave_id):
+        leave_request = get_object_or_404(LeaveRequest, id=leave_id)
+
+        if not leave_request.cancellation_request:
+            return Response({"error": "No cancellation request for this leave."}, status=400)
+
+        action = request.data.get("action")
+        if action == "approve":
+            leave_request.status = "Cancelled"
+            leave_request.save()
+            return Response({"message": "Leave cancellation approved."}, status=200)
+
+        elif action == "reject":
+            leave_request.status = "Cancel Rejected"
+            leave_request.save()
+            return Response({"message": "Leave cancellation rejected."}, status=200)
+
+        return Response({"error": "Invalid action."}, status=400)
+    
+class PendingLeaveCancellationRequestsView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Retrieve all leave requests that are pending cancellation approval."""
+        if request.user.role.lower() != "hr":  # Ensure only HR can access
+            return Response(
+                {"error": "Access denied! Only HR can view leave cancellation requests."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Fetch leave requests that are pending cancellation approval
+        pending_cancellations = LeaveRequest.objects.filter(status="Cancellation Pending")
+
+        # Serialize the data
+        data = [
+            {
+                "id": leave.id,
+                "employee": leave.employee.user.get_full_name(),
+                "leave_type": leave.leave_policy.leave_type if leave.leave_policy else "Unknown",
+                "start_date": leave.start_date,
+                "end_date": leave.end_date,
+                "cancellation_reason": leave.cancellation_reason,
+            }
+            for leave in pending_cancellations
+        ]
+
+        return Response(data, status=status.HTTP_200_OK)
+
+##############  HR leave history view  #####################
+class LeaveHistoryView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        approved_leaves = LeaveRequest.objects.filter(status="Approved").order_by("-start_date")
+        serializer = LeaveRequestSerializer(approved_leaves, many=True)
+        return Response(serializer.data, status=200)
+#########   employee list view  ####################
+
+class EmployeeListView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        employees = Employee.objects.all().order_by("name")  # Fetch all employees sorted by name
+        serializer = EmployeeSerializers(employees, many=True)
+        return Response(serializer.data, status=200)
 
 ############    HR self portal  #####################
+from datetime import datetime
 
+class HRMonthlyAttendanceView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        
+        # Ensure only HRs can access their own stats
+        if not hasattr(user, "employee"):
+            return Response({"error": "User is not an employee"}, status=400)
+
+        today = now().date()
+        first_day = today.replace(day=1)
+
+        # Fetch HR’s attendance records for the current month
+        attendance_records = Attendance.objects.filter(
+            employee=user.employee, date__range=[first_day, today]
+        ).order_by("date")
+
+        total_days = (today - first_day).days + 1
+        present_days = attendance_records.filter(status="present").count()
+        absent_days = attendance_records.filter(status="absent").count()
+        late_days = attendance_records.filter(status="late").count()
+
+        # Calculate total overtime hours
+        total_overtime_hours = 0
+        attendance_list = []
+
+        # Get today's attendance record
+        today_attendance = Attendance.objects.filter(employee=user.employee, date=today).first()
+        
+        # Extract today's check-in and check-out as time objects
+        today_check_in = today_attendance.check_in if today_attendance and today_attendance.check_in else None
+        today_check_out = today_attendance.check_out if today_attendance and today_attendance.check_out else None
+
+        for record in attendance_records:
+            check_in = record.check_in if record.check_in else None
+            check_out = record.check_out if record.check_out else None
+
+            # Convert check_in and check_out to datetime
+            if check_in and check_out:
+                check_in_dt = datetime.combine(record.date, check_in)
+                check_out_dt = datetime.combine(record.date, check_out)
+
+                work_hours = (check_out_dt - check_in_dt).total_seconds() / 3600  # Convert to hours
+                overtime_hours = max(work_hours - 8, 0)  # Assuming 8 working hours
+                total_overtime_hours += overtime_hours
+            else:
+                work_hours = 0
+                overtime_hours = 0
+
+            attendance_list.append({
+                "status": record.status,
+                "check_in": check_in,  # ✅ Time object, not string
+                "check_out": check_out,  # ✅ Time object, not string
+                "overtime_hours": round(overtime_hours, 2)
+            })
+
+        # Calculate attendance percentage
+        attendance_percentage = (present_days / total_days) * 100 if total_days > 0 else 0
+
+        data = {
+            "total_days": total_days,
+            "present_days": present_days,
+            "absent_days": absent_days,
+            "late_days": late_days,
+            "total_overtime_hours": round(total_overtime_hours, 2),
+            "attendance_percentage": round(attendance_percentage, 2),
+            "check_in": today_check_in,  # ✅ Time object
+            "check_out": today_check_out,  # ✅ Time object
+        }
+
+        return Response(data, status=200)
+
+#############   create community    ############
+
+class CommunityView(APIView):
+    authentication_classes = [JWTAuthentication]  # Add authentication if required
+    permission_classes = [permissions.IsAuthenticated]  # Restrict to authenticated users
+
+    def get(self, request):
+        communities = Community.objects.all()
+        serializer = CommunitySerializer(communities, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        serializer = CommunitySerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+##########  create designation  ###################
+
+class DesignationListCreateView(generics.ListCreateAPIView):
+    queryset = Designation.objects.all()
+    serializer_class = DesignationSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication] 
+
+############    Shift management    #####################
+
+class WorkingHoursListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        """List all working hours shifts."""
+        shifts = WorkingHours.objects.filter(status='active')
+        serializer = WorkingHoursSerializer(shifts, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        """Create a new shift (working hours)."""
+        serializer = WorkingHoursSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class ShiftRosterListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        """List all shift rosters."""
+        rosters = ShiftRoster.objects.all()
+        serializer = ShiftRosterSerializer(rosters, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        """Create a new shift roster."""
+        serializer = ShiftRosterSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class AssignShiftView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request):
+        """Assign an employee to a shift for a given date."""
+        employee_id = request.data.get('employee')
+        shift_roster_id = request.data.get('shift_roster')
+        shift_id = request.data.get('shift')
+        date = request.data.get('date')
+
+        if not employee_id or not shift_roster_id or not shift_id or not date:
+            return Response({"error": "Employee, Shift Roster, Shift, and Date are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Ensure an employee isn't assigned multiple shifts on the same day
+        if EmployeeShiftAssignment.objects.filter(employee_id=employee_id, date=date).exists():
+            return Response({"error": "Employee is already assigned to a shift on this date"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Assign shift
+        assignment = EmployeeShiftAssignment.objects.create(
+            employee_id=employee_id, shift_roster_id=shift_roster_id, shift_id=shift_id, date=date
+        )
+        return Response(EmployeeShiftAssignmentSerializer(assignment).data, status=status.HTTP_201_CREATED)
+
+class EmployeeShiftView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        """Get shifts assigned to the authenticated employee."""
+        employee = request.user.employee
+        today = now().date()
+        shifts = EmployeeShiftAssignment.objects.filter(employee=employee, date__eq=today).order_by('date')
+        serializer = EmployeeShiftAssignmentSerializer(shifts, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class ShiftColleaguesView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, date):
+        """Get colleagues assigned to the same shift on a given date."""
+        employee = request.user.employee
+        assignments = EmployeeShiftAssignment.objects.filter(
+            date=date, 
+            shift__in=EmployeeShiftAssignment.objects.filter(employee=employee, date=date).values_list('shift', flat=True)
+        )
+        serializer = EmployeeShiftAssignmentSerializer(assignments, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+###########     employee dashboard shift view   #############
+
+class EmployeeDasboardShiftView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        """Get today's shift assigned to the authenticated employee."""
+        employee = request.user.employee
+        today = now().date()
+
+        # Fetch only today's shift for the logged-in employee
+        shifts = EmployeeShiftAssignment.objects.filter(employee=employee, date=today)
+
+        # Serialize and return data
+        serializer = EmployeeShiftAssignmentSerializer(shifts, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+from django.utils.timezone import now
+
+class ShiftColleaguesDashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        """Get colleagues assigned to the same shift today."""
+        employee = request.user.employee
+        today = now().date()
+
+        # Get the shift of the authenticated employee for today
+        employee_shift = EmployeeShiftAssignment.objects.filter(employee=employee, date=today).values_list('shift', flat=True)
+
+        # Get colleagues assigned to the same shift today
+        assignments = EmployeeShiftAssignment.objects.filter(date=today, shift__in=employee_shift)
+
+        serializer = EmployeeShiftAssignmentSerializer(assignments, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

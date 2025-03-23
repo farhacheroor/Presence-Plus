@@ -27,7 +27,7 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = LeaveRequest
-        fields = ["id", "employee_name", "start_date", "end_date", "reason", "status", "leave_type"]
+        fields = ["id", "employee_name", "start_date", "end_date", "reason", "status", "leave_type", "status"]
 
 
 
@@ -145,9 +145,12 @@ class AttendanceRequestSerializer(serializers.ModelSerializer):
 
 
 class EmployeeShiftAssignmentSerializer(serializers.ModelSerializer):
+    employee_name = serializers.CharField(source='employee.name', read_only=True)
+    shift_type = serializers.CharField(source='shift.shift_type', read_only=True)
+
     class Meta:
         model = EmployeeShiftAssignment
-        fields = '__all__'
+        fields = ['id', 'date', 'employee', 'employee_name', 'shift_roster', 'shift', 'shift_type',]
 
 class WorkingHoursSerializer(serializers.ModelSerializer):
     class Meta:
@@ -180,6 +183,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
     def get_attendance_status(self, obj):
         latest_attendance = Attendance.objects.filter(employee=obj).order_by('-date').first()
         return latest_attendance.status if latest_attendance else "No Record"
+
+class EmployeeSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = Employee
+        fields = "__all__" 
 
 class AttendanceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -240,27 +248,34 @@ class EmployeeLeaveBalanceSerializer(serializers.ModelSerializer):
         fields = ["id", "user", "designation", "leave_balances"]
 
     def get_leave_balances(self, obj):
-        leave_policies = LeavePolicy.objects.filter(employee=obj)
-        leave_taken = LeaveRequest.objects.filter(employee=obj, status="approved").values("leave_type").annotate(
-            count=Count("id"))
+        # Get leave balances for the employee
+        leave_balances = LeaveBalance.objects.filter(employee=obj).select_related("leave_policy")
 
-        leave_taken_dict = {leave["leave_type"]: leave["count"] for leave in leave_taken}
+        # Get approved leave requests
+        leave_taken = LeaveRequest.objects.filter(employee=obj, status="approved").values("leave_policy__leave_type").annotate(
+            count=Count("id")
+        )
 
-        leave_balances = []
-        for policy in leave_policies:
-            leave_type = policy.leave_type
-            allocated = policy.allocated_leaves
+        leave_taken_dict = {leave["leave_policy__leave_type"]: leave["count"] for leave in leave_taken}
+
+
+        leave_summary = []
+        for balance in leave_balances:
+            leave_policy = balance.leave_policy  # Get associated leave policy
+            leave_type = leave_policy.leave_type
+            allocated = leave_policy.amount  # Use the correct field for allocated leaves
             used = leave_taken_dict.get(leave_type, 0)
             remaining = max(allocated - used, 0)
 
-            leave_balances.append({
+            leave_summary.append({
                 "leave_type": leave_type,
                 "allocated_leaves": allocated,
                 "used_leaves": used,
                 "remaining_leaves": remaining,
             })
 
-        return leave_balances
+        return leave_summary
+
 
 class ManualAttendanceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -357,11 +372,14 @@ class EmployeeAddSerializer(serializers.ModelSerializer):
             
 class EmployeeListSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email")  # ✅ Fetch from User model
-    role = serializers.CharField(source="user.role")  # ✅ Fetch from User model
+    role = serializers.CharField(source="user.role")
+    department = serializers.CharField(source="user.department")  # ✅ Fetch from User model
+    designation = serializers.CharField(source="designation.desig_name", allow_null=True)  # ✅ Get Designation name
+    community = serializers.CharField(source="community.community_name", allow_null=True)  # ✅ Get Community name
 
     class Meta:
-        model = Employee
-        fields = ["id", "name", "email", "role", "emp_num", "hire_date", "status"]
+        model = Employee        
+        fields = ["id", "name", "email", "role", "emp_num", "hire_date", "status","designation", "community","department"]
 
 class HRLeaveRequestSerializer(serializers.ModelSerializer):
     class Meta:
@@ -398,3 +416,33 @@ class AdminProfileSerializer(serializers.ModelSerializer):
         Employee.objects.update_or_create(user=instance, defaults=employee_data)
 
         return instance
+    
+class AttendanceStatsSerializer(serializers.Serializer):
+    total_days = serializers.IntegerField()
+    present_days = serializers.IntegerField()
+    absent_days = serializers.IntegerField()
+    late_days = serializers.IntegerField()
+    total_overtime_hours = serializers.FloatField()
+    attendance_percentage = serializers.FloatField()
+
+class CommunitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Community
+        fields = '__all__'
+
+class DesignationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Designation
+        fields = '__all__'
+
+class LeaveRequestSerializers(serializers.ModelSerializer):
+    employee_name = serializers.CharField(source="employee.name", read_only=True)
+    designation = serializers.CharField(source="employee.designation.desig_name", read_only=True)
+    leave_type = serializers.CharField(source="leave_policy.name", read_only=True)
+
+    class Meta:
+        model = LeaveRequest
+        fields = [
+            "id", "employee_name", "designation", "start_date", "end_date",
+            "status", "reason", "reject_reason", "leave_type"
+        ]

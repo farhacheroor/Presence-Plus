@@ -86,13 +86,27 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'presence.wsgi.application'
 
+MIDDLEWARE.insert(0, 'corsheaders.middleware.CorsMiddleware')
 
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5000",  # Allow requests from your React frontend
+    "http://192.168.251.51:8000",  # If needed, allow your backend IP
+]
+
+CORS_ALLOW_CREDENTIALS = True 
+
+CORS_ALLOW_HEADERS = [
+    "content-type",
+    "authorization",
+    "x-csrftoken",
+    "x-requested-with",
+]
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 DATABASES = {
     'default': {
-         'ENGINE': 'django.db.backends.postgresql',
+        'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'presence',
         'USER': 'postgres',
         'PASSWORD': '09282001',
@@ -193,7 +207,7 @@ REST_FRAMEWORK = {
 from datetime import timedelta
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(days=1),  # Token expires in 1 day
+    "ACCESS_TOKEN_LIFETIME": timedelta(days=5),  # Token expires in 1 day
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),  # Refresh token expires in 7 days
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
