@@ -1,0 +1,21 @@
+# Python and Django-specific files
+venv/           # Virtual environment folder
+*.pyc           # Compiled Python files
+__pycache__/    # Python cache directory
+db.sqlite3      # Local SQLite database
+
+# Environment variables
+.env            # Environment secrets (e.g., SECRET_KEY)
+
+# OS-specific files (macOS)
+.DS_Store       # macOS metadata file
+
+# IDE-specific files
+.idea/          # JetBrains IDE (PyCharm) config
+.vscode/        # VS Code config
+
+# Other
+*.log           # Log files
+*.pot           # Django translation files
+*.pyo           # Optimized Python files
+*.pid           # Process ID files
