@@ -129,6 +129,98 @@ class CreateUserView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+User = get_user_model()
+
+class HRCreateUserView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]  # Ensure only authenticated users can access
+
+    def post(self, request):
+        emp_num = request.data.get("emp_num")
+        name = request.data.get("name")
+        department = request.data.get("department") 
+        #designation_id = request.data.get("designation")  # Get designation ID
+        community_id = request.data.get("community")  # Get community ID
+        email = request.data.get("email")  
+        hire_date = request.data.get("hire_date")
+        password = request.data.get("password")  
+        username = email  
+
+        # Get the current user's role
+        current_role = getattr(request.user, "role", "").lower() if request.user else None
+
+        if current_role == "admin":
+            new_user_role = "hr"
+        elif current_role == "hr":
+            new_user_role = "employee"
+        else:
+            return Response({"error": "You do not have permission to create users"}, status=status.HTTP_403_FORBIDDEN)
+
+        if not all([email, department, name, emp_num, hire_date, community_id]):
+            return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate hire_date format
+        try:
+            hire_date = now().strptime(hire_date, "%Y-%m-%d").date()
+        except ValueError:
+            return Response({"error": "Invalid hire_date format. Use YYYY-MM-DD"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if User.objects.filter(email=email).exists():
+            return Response({"error": "User with this email already exists"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if Employee.objects.filter(emp_num=emp_num).exists():
+            return Response({"error": "Employee Number already exists"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Retrieve the selected designation
+        #designation_obj = get_object_or_404(Designation, id=designation_id)
+        community_obj = get_object_or_404(Community, id=community_id)
+
+        if not password:
+            password = get_random_string(length=10)
+
+        try:
+            with transaction.atomic():
+                user = User.objects.create(
+                    email=email,
+                    password=make_password(password),
+                    role=new_user_role,
+                    department=department,
+                    username=username
+                )
+
+                # Create Employee record
+                Employee.objects.create(
+                    user=user,
+                    name=name,
+                    emp_num=emp_num,
+                    hire_date=hire_date,
+                    #designation=designation_obj,
+                    community=community_obj # Assign existing designation
+                )
+
+                # Send email with login credentials
+                subject = "Your Account Has Been Created"
+                message = f"""
+                Hello {name},
+
+                Your account has been successfully created.
+
+                **Login Credentials:**
+                - Email: {email}
+                - Password: {password}
+
+                Please log in and change your password immediately.
+
+                Regards,
+                Team Presence
+                """
+                send_mail(subject, message, settings.EMAIL_HOST_USER, [email])
+
+            return Response({"message": f"{new_user_role.capitalize()} user created successfully. Credentials sent to email."}, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 #######     login   ##########################
 User = get_user_model()
 
