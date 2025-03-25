@@ -25,3 +25,5 @@ class YourAppConfig(AppConfig):
 
     # def ready(self):
     #     post_migrate.connect(create_admin_user, sender=self)
+    def ready(self):
+        import presence_plus.signals

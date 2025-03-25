@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -20,10 +21,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-59r8tq7^e*1s^x=6#9$bwyq+()03$fs_sc^^xgxw5qkz2skcsi'
+SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+# DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
@@ -58,6 +60,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -104,15 +107,23 @@ CORS_ALLOW_HEADERS = [
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'presence',
+#         'USER': 'postgres',
+#         'PASSWORD': '09282001',
+#         'HOST': 'localhost',
+#         'PORT': '5432',
+#     }
+# }
+import dj_database_url 
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'presence',
-        'USER': 'postgres',
-        'PASSWORD': '09282001',
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
+    'default': dj_database_url.config(
+        default=os.getenv('DATABASE_URL'),
+        conn_max_age=600
+    )
 }
 
 
@@ -164,7 +175,9 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
@@ -219,12 +232,12 @@ SIMPLE_JWT = {
 }
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = "smtp.gmail.com"
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = "presenceplussoftware@gmail.com"  # Change to your email
-EMAIL_HOST_PASSWORD = "baim kpea oaic iwun"  # Use App Password (if using Gmail)
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+EMAIL_HOST = os.getenv('EMAIL_HOST'),
+EMAIL_PORT = os.getenv('EMAIL_PORT'),
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS'),
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER'),
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD'),
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL'),
 
 REST_FRAMEWORK = {
     "DEFAULT_FILTER_BACKENDS": [
@@ -262,3 +275,8 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [],
     'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.AllowAny'],
 }
+
+CELERY_TASK_ALWAYS_EAGER = False
+CELERY_TASK_SERIALIZER = 'json'
+
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-59r8tq7^e*1s^x=6#9$bwyq+()03$fs_sc^^xgxw5qkz2skcsi')

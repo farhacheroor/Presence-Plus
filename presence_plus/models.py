@@ -114,7 +114,7 @@ class LeaveBalance(models.Model):
     total = models.IntegerField()
     last_updated = models.DateField(auto_now=True)
     leave_policy = models.ForeignKey(LeavePolicy, on_delete=models.CASCADE)
-    leave_transaction = models.ForeignKey(LeaveTransaction, on_delete=models.CASCADE)
+    leave_transaction = models.ForeignKey(LeaveTransaction, on_delete=models.CASCADE , null=True, blank=True)
 
 class LeaveType(models.Model):
     leave = models.CharField(max_length=100)

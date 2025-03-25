@@ -494,7 +494,7 @@ class ManageCancellationRequestView(APIView):
 #################       attendance report generator ########################
 
 class AttendanceReportView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [JWTAuthentication]  
     permission_classes = [IsAuthenticated]
 
     def get(self, request, format=None):
@@ -2152,3 +2152,15 @@ class ShiftColleaguesDashboardView(APIView):
 
         serializer = EmployeeShiftAssignmentSerializer(assignments, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+###########     notifications       #######################
+
+class NotificationListView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        notifications = Notification.objects.filter(user=request.user).order_by('-time_stamp')
+        serializer = NotificationSerializer(notifications, many=True)
+        return Response(serializer.data)
+

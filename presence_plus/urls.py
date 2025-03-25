@@ -81,5 +81,6 @@ urlpatterns = [
     path('shift-colleagues/<str:date>/', ShiftColleaguesView.as_view(), name='shift_colleagues'),
     path('shift/colleagues/', ShiftColleaguesDashboardView.as_view(), name='shift-colleagues-today'),
     path('hrempleavecreate/',HRRequestLeaveView.as_view(), name='heempleavecreate'),
+    path('leavenotification/',NotificationListView.as_view(), name='leavenotification'),
 ]
 urlpatterns += router.urls

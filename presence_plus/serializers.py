@@ -446,3 +446,8 @@ class LeaveRequestSerializers(serializers.ModelSerializer):
             "id", "employee_name", "designation", "start_date", "end_date",
             "status", "reason", "reject_reason", "leave_type"
         ]
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = "__all__"
