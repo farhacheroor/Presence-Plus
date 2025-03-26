@@ -60,11 +60,6 @@ class WorkingHours(models.Model):
     end_time = models.TimeField()
     status = models.CharField(max_length=20, choices=[('active', 'Active'), ('inactive', 'Inactive')])
 
-class ShiftRoster(models.Model):
-    start_date = models.DateField()
-    end_date = models.DateField()
-    working_hours = models.ForeignKey(WorkingHours, on_delete=models.CASCADE)
-
 class Overtime(models.Model):
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
     date = models.DateField()
@@ -75,7 +70,6 @@ class Overtime(models.Model):
 class EmployeeShiftAssignment(models.Model):
     date = models.DateField()
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
-    shift_roster = models.ForeignKey(ShiftRoster, on_delete=models.CASCADE)
     shift = models.ForeignKey(WorkingHours, on_delete=models.CASCADE)
 
 class LeavePolicy(models.Model):
