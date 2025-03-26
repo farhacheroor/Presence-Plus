@@ -237,11 +237,11 @@ SIMPLE_JWT = {
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
-EMAIL_PORT = os.getenv('EMAIL_PORT')
-EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS')
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))  # Default to 587 if not set
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'  # Defaults to True
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'presenceplussoftware@gmail.com')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', 'baim kpea oaic iwun')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL' , 'EMAIL_HOST_USER')
 
 print("EMAIL_HOST:", os.getenv('EMAIL_HOST'))  # Should output 'smtp.gmail.com'
 print("EMAIL_HOST_USER:", os.getenv('EMAIL_HOST_USER'))
