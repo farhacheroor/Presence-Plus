@@ -1432,11 +1432,11 @@ class WorkingHoursViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
-class ShiftRosterViewSet(viewsets.ModelViewSet):
-    queryset = ShiftRoster.objects.all()
-    serializer_class = ShiftRosterSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    authentication_classes = [JWTAuthentication]
+# class ShiftRosterViewSet(viewsets.ModelViewSet):
+#     queryset = ShiftRoster.objects.all()
+#     # serializer_class = ShiftRosterSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+#     authentication_classes = [JWTAuthentication]
 
 class EmployeeViewSet(viewsets.ModelViewSet):
     queryset = Employee.objects.all()
@@ -2151,23 +2151,23 @@ class WorkingHoursListCreateView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class ShiftRosterListCreateView(APIView):
-    permission_classes = [IsAuthenticated]
-    authentication_classes = [JWTAuthentication]
+# class ShiftRosterListCreateView(APIView):
+#     permission_classes = [IsAuthenticated]
+#     authentication_classes = [JWTAuthentication]
 
-    def get(self, request):
-        """List all shift rosters."""
-        rosters = ShiftRoster.objects.all()
-        serializer = ShiftRosterSerializer(rosters, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+#     def get(self, request):
+#         """List all shift rosters."""
+#         rosters = ShiftRoster.objects.all()
+#         serializer = ShiftRosterSerializer(rosters, many=True)
+#         return Response(serializer.data, status=status.HTTP_200_OK)
 
-    def post(self, request):
-        """Create a new shift roster."""
-        serializer = ShiftRosterSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+#     def post(self, request):
+#         """Create a new shift roster."""
+#         serializer = ShiftRosterSerializer(data=request.data)
+#         if serializer.is_valid():
+#             serializer.save()
+#             return Response(serializer.data, status=status.HTTP_201_CREATED)
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class AssignShiftView(APIView):
     permission_classes = [IsAuthenticated]
