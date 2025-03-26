@@ -2014,7 +2014,7 @@ class LeaveHistoryView(APIView):
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
-        approved_leaves = LeaveRequest.objects.filter(status="Approved").order_by("-start_date")
+        approved_leaves = LeaveRequest.objects.filter(status="Accepted").order_by("-start_date")
         serializer = LeaveRequestSerializer(approved_leaves, many=True)
         return Response(serializer.data, status=200)
 #########   employee list view  ####################
