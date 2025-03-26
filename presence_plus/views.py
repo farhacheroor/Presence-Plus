@@ -763,6 +763,18 @@ class LeaveTypeCreateView(APIView):
             serializer.save()
             return Response({"message": "Public holiday leave type created successfully!", "data": serializer.data}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get(self, request):
+        """Get all leave types"""
+        leave_types = LeaveType.objects.all()
+        serializer = LeaveTypeSerializer(leave_types, many=True)
+        return Response(
+            {
+                "message": "Leave types retrieved successfully!",
+                "data": serializer.data
+            },
+            status=status.HTTP_200_OK
+        )
 
 #################   logout  ##############
 class LogoutView(APIView):
