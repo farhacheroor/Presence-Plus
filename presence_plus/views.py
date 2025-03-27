@@ -1520,6 +1520,7 @@ class EmployeeLeaveBalanceView(APIView):
     def get(self, request):
         employee = get_object_or_404(Employee, user=request.user)
         leave_balances = LeaveBalance.objects.filter(employee=employee)
+        leave_request = LeaveRequest.objects.filter(employee=employee)
 
         leave_data = []
 
@@ -1528,6 +1529,9 @@ class EmployeeLeaveBalanceView(APIView):
             total = leave.total  # ✅ Correct field
             leave_policy = leave.leave_policy  # ✅ Fetch LeavePolicy
             leave_type = leave_policy.leave_type  # ✅ Get leave type name
+            
+        for leave in leave_request:
+            status = status
 
             # Handle unlimited/unpaid leave (represented as ∞)
             total_display = "∞" if total == float("inf") else total
@@ -1536,7 +1540,7 @@ class EmployeeLeaveBalanceView(APIView):
             leave_requests = LeaveRequest.objects.filter(
                 employee=employee,
                 leave_policy=leave_policy,  # ✅ Correct filter
-                status="Approved" or "approved",
+                status="approved" or "pending",
                 cancellation_request=False  # ✅ Exclude canceled leave requests
             )
 
@@ -1551,7 +1555,8 @@ class EmployeeLeaveBalanceView(APIView):
             leave_data.append({
                 "name": leave_type,
                 "used": f"{used}/{total_display} Used",
-                "dates": leave_dates  # ✅ Send full leave duration
+                "dates": leave_dates , # ✅ Send full leave duration
+                "status": status
             })
 
         return Response({"leave_balance": leave_data}, status=200)
