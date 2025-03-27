@@ -1536,7 +1536,7 @@ class EmployeeLeaveBalanceView(APIView):
             leave_requests = LeaveRequest.objects.filter(
                 employee=employee,
                 leave_policy=leave_policy,
-                status__in=["Approved", "Pending"],  # ✅ Proper filtering
+                status__in=["Accepted", "Pending"],  # ✅ Proper filtering
                 cancellation_request=False  # ✅ Exclude canceled leave requests
             )
 
