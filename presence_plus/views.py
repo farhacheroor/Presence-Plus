@@ -2144,7 +2144,7 @@ class AssignShiftView(APIView):
         
             # Create assignments
             assignments = [
-                mployeeShiftAssignment(
+                EmployeeShiftAssignment(
                     date=date,
                     employee_id=emp_id,
                     shift_id=shift.id
