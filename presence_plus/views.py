@@ -2086,10 +2086,10 @@ class AssignShiftView(APIView):
         print("Raw request data:", request.data)  # Debug line
         print("Headers:", request.headers)
         date = request.data.get('date')
-        shift_roster = request.data.get('shift_roster')  # "Morning", "Evening", etc.
+        shift_type = request.data.get('shift_type')  # "Morning", "Evening", etc.
         employee_ids = request.data.get('employees', [])  # [2, 5, 10]
 
-        if not date or not shift_roster or not employee_ids:
+        if not date or not shift_type or not employee_ids:
             return Response(
                 {"error": "Date, shift roster, and employees are required"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -2097,10 +2097,10 @@ class AssignShiftView(APIView):
 
         # Get shift ID from roster name
         try:
-            shift = WorkingHours.objects.get(name=shift_roster)
+            shift = WorkingHours.objects.get(name=shift_type)
         except WorkingHours.DoesNotExist:
             return Response(
-                {"error": f"Invalid shift roster: {shift_roster}"},
+                {"error": f"Invalid shift roster: {shift_type}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 

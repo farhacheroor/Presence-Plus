@@ -157,6 +157,10 @@ class WorkingHoursSerializer(serializers.ModelSerializer):
         model = WorkingHours
         fields = "__all__"
 
+class ShiftRosterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ShiftRoster
+        fields = "__all__"
 
 class EmployeeProfileSerializer(serializers.ModelSerializer):
     name = serializers.ReadOnlyField()
