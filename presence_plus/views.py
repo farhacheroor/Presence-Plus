@@ -2088,79 +2088,85 @@ class AssignShiftView(APIView):
     authentication_classes = [JWTAuthentication]
 
     def post(self, request):
-        print("Received data:", request.data)  # Debug
-    
-        # Validate presence of all fields
-        required_fields = ['date', 'shift_roster', 'employees']
-        if not all(field in request.data for field in required_fields):
-            return Response(
-                {"error": f"Required fields: {required_fields}"},
-                status=400
-            )
-    
-        date = request.data['date']
-        shift_name = request.data['shift_roster']
-        employee_ids = request.data['employees']
-    
-        # Validate date format
         try:
-            datetime.strptime(date, '%Y-%m-%d')
-        except ValueError:
-            return Response(
-                {"error": "Invalid date format. Use YYYY-MM-DD"},
-                status=400
-            )
+            print("Received data:", request.data)  # Debug
     
-        # Validate shift exists
-        try:
-            shift = WorkingHours.objects.get(name=shift_name)
-        except WorkingHours.DoesNotExist:
-            return Response(
-                {"error": f"Shift '{shift_name}' doesn't exist"},
-                status=400
-            )
+            # Validate presence of all fields
+            required_fields = ['date', 'shift_roster', 'employees']
+            if not all(field in request.data for field in required_fields):
+                return Response(
+                    {"error": f"Required fields: {required_fields}"},
+                    status=400
+                )
     
-        # Validate employees exist
-        valid_employees = Employee.objects.filter(id__in=employee_ids)
-        if len(valid_employees) != len(employee_ids):
-            invalid_ids = set(employee_ids) - set(valid_employees.values_list('id', flat=True))
-            return Response(
-                {"error": f"Invalid employee IDs: {invalid_ids}"},
-                status=400
-            )
-    
-        # Check for existing assignments
-        conflicts = EmployeeShiftAssignment.objects.filter(
-            employee_id__in=employee_ids,
-            date=date
-        ).values_list('employee_id', flat=True)
-    
-        if conflicts:
-            return Response(
-                {"error": f"Employees already assigned: {list(conflicts)}"},
-                status=400
-            )
-    
-        # Create assignments
-        assignments = [
-            mployeeShiftAssignment(
-                date=date,
-                employee_id=emp_id,
-                shift_id=shift.id
-            ) for emp_id in employee_ids
-        ]
-    
-        try:
-            EmployeeShiftAssignment.objects.bulk_create(assignments)
-            return Response(
-                {"message": f"Assigned {len(assignments)} employees to {shift_name}"},
-                status=201
-            )
+            date = request.data['date']
+            shift_name = request.data['shift_roster']
+            employee_ids = request.data['employees']
+        
+            # Validate date format
+            try:
+                datetime.strptime(date, '%Y-%m-%d')
+            except ValueError:
+                return Response(
+                    {"error": "Invalid date format. Use YYYY-MM-DD"},
+                    status=400
+                )
+        
+            # Validate shift exists
+            try:
+                shift = WorkingHours.objects.get(name=shift_name)
+            except WorkingHours.DoesNotExist:
+                return Response(
+                    {"error": f"Shift '{shift_name}' doesn't exist"},
+                    status=400
+                )
+        
+            # Validate employees exist
+            valid_employees = Employee.objects.filter(id__in=employee_ids)
+            if len(valid_employees) != len(employee_ids):
+                invalid_ids = set(employee_ids) - set(valid_employees.values_list('id', flat=True))
+                return Response(
+                    {"error": f"Invalid employee IDs: {invalid_ids}"},
+                    status=400
+                )
+        
+            # Check for existing assignments
+            conflicts = EmployeeShiftAssignment.objects.filter(
+                employee_id__in=employee_ids,
+                date=date
+            ).values_list('employee_id', flat=True)
+        
+            if conflicts:
+                return Response(
+                    {"error": f"Employees already assigned: {list(conflicts)}"},
+                    status=400
+                )
+        
+            # Create assignments
+            assignments = [
+                mployeeShiftAssignment(
+                    date=date,
+                    employee_id=emp_id,
+                    shift_id=shift.id
+                ) for emp_id in employee_ids
+            ]
+        
+            try:
+                EmployeeShiftAssignment.objects.bulk_create(assignments)
+                return Response(
+                    {"message": f"Assigned {len(assignments)} employees to {shift_name}"},
+                    status=201
+                )
+            except Exception as e:
+                return Response(
+                    {"error": str(e)},
+                    status=500
+                )
         except Exception as e:
             return Response(
-                {"error": str(e)},
-                status=500
-            )
+                    {"error": str(e)},
+                    status=500
+                )
 
     def put(self, request, assignment_id):
         """Update an existing shift assignment"""
