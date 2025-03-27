@@ -1557,6 +1557,7 @@ class EmployeeLeaveBalanceView(APIView):
                 "name": leave_type,
                 "used": f"{used}/{total_display} Used",
                 "dates": leave_dates  # ✅ Send full leave duration with status
+                "status" : status
             })
 
         return Response({"leave_balance": leave_data}, status=200)
