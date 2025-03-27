@@ -1520,7 +1520,6 @@ class EmployeeLeaveBalanceView(APIView):
     def get(self, request):
         employee = get_object_or_404(Employee, user=request.user)
         leave_balances = LeaveBalance.objects.filter(employee=employee)
-        leave_request = LeaveRequest.objects.filter(employee=employee)
 
         leave_data = []
 
@@ -1529,24 +1528,26 @@ class EmployeeLeaveBalanceView(APIView):
             total = leave.total  # ✅ Correct field
             leave_policy = leave.leave_policy  # ✅ Fetch LeavePolicy
             leave_type = leave_policy.leave_type  # ✅ Get leave type name
-            
-        for leave in leave_request:
-            status = status
 
             # Handle unlimited/unpaid leave (represented as ∞)
             total_display = "∞" if total == float("inf") else total
 
-            # ✅ Fetch only approved and non-canceled leave requests
+            # ✅ Fetch only approved and pending leave requests
             leave_requests = LeaveRequest.objects.filter(
                 employee=employee,
-                leave_policy=leave_policy,  # ✅ Correct filter
-                status="approved" or "pending",
+                leave_policy=leave_policy,
+                status__in=["approved", "pending"],  # ✅ Proper filtering
                 cancellation_request=False  # ✅ Exclude canceled leave requests
             )
 
-            # ✅ Extract start and end dates
+            # ✅ Extract start and end dates with status
             leave_dates = [
-                {"start_date": leave.start_date, "end_date": leave.end_date} for leave in leave_requests
+                {
+                    "start_date": leave.start_date,
+                    "end_date": leave.end_date,
+                    "status": leave.status  # ✅ Include leave status
+                }
+                for leave in leave_requests
             ]
 
             # ✅ Log results for debugging
@@ -1555,8 +1556,7 @@ class EmployeeLeaveBalanceView(APIView):
             leave_data.append({
                 "name": leave_type,
                 "used": f"{used}/{total_display} Used",
-                "dates": leave_dates , # ✅ Send full leave duration
-                "status": status
+                "dates": leave_dates  # ✅ Send full leave duration with status
             })
 
         return Response({"leave_balance": leave_data}, status=200)
