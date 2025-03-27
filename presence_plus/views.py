@@ -2083,6 +2083,8 @@ class AssignShiftView(APIView):
 
     def post(self, request):
         """Assign employees to shifts for a specific date"""
+        print("Raw request data:", request.data)  # Debug line
+        print("Headers:", request.headers)
         date = request.data.get('date')
         shift_roster = request.data.get('shift_roster')  # "Morning", "Evening", etc.
         employee_ids = request.data.get('employees', [])  # [2, 5, 10]
