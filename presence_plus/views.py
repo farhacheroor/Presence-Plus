@@ -1524,39 +1524,40 @@ class EmployeeLeaveBalanceView(APIView):
         leave_data = []
 
         for leave in leave_balances:
-            used = leave.used  # ✅ Correct field
-            total = leave.total  # ✅ Correct field
-            leave_policy = leave.leave_policy  # ✅ Fetch LeavePolicy
-            leave_type = leave_policy.leave_type  # ✅ Get leave type name
+            used = leave.used
+            total = leave.total
+            leave_policy = leave.leave_policy
+            leave_type = leave_policy.leave_type
 
-            # Handle unlimited/unpaid leave (represented as ∞)
+            # Handle unlimited/unpaid leave
             total_display = "∞" if total == float("inf") else total
 
-            # ✅ Fetch only approved and pending leave requests
+            # ✅ Fetch leave requests with proper filtering
             leave_requests = LeaveRequest.objects.filter(
                 employee=employee,
                 leave_policy=leave_policy,
-                status__in=["Accepted", "Pending"],  # ✅ Proper filtering
-                cancellation_request=False  # ✅ Exclude canceled leave requests
+                status__in=["approved", "pending"],
+                cancellation_request=False
             )
 
-            # ✅ Extract start and end dates with status
-            leave_dates = [
-                {
-                    "start_date": leave.start_date,
-                    "end_date": leave.end_date,
-                    "status": leave.status  # ✅ Include leave status
-                }
-                for leave in leave_requests
-            ]
+            # ✅ Debugging: Print retrieved leave requests
+            print(f"\nLeave Type: {leave_type}")
+            print(f"Total Leaves Found: {leave_requests.count()}")
 
-            # ✅ Log results for debugging
-            print(f"Leave Type: {leave_type}, Found Leaves: {leave_requests.count()}, Dates: {leave_dates}")
+            leave_dates = []
+            for leave_req in leave_requests:
+                print(f"Leave Request: {leave_req.start_date} to {leave_req.end_date}, Status: {leave_req.status}")
+
+                leave_dates.append({
+                    "start_date": leave_req.start_date.strftime("%Y-%m-%d"),
+                    "end_date": leave_req.end_date.strftime("%Y-%m-%d"),
+                    "status": leave_req.status
+                })
 
             leave_data.append({
                 "name": leave_type,
                 "used": f"{used}/{total_display} Used",
-                "dates": leave_dates  # ✅ Send full leave duration with status
+                "dates": leave_dates
             })
 
         return Response({"leave_balance": leave_data}, status=200)
