@@ -2084,49 +2084,53 @@ class AssignShiftView(APIView):
     def post(self, request):
         """Assign employees to shifts for a specific date"""
         date = request.data.get('date')
-        shift_assignments = request.data.get('assignments', [])  # Format: [{"employee": id, "shift": id}, ...]
+        shift_roster = request.data.get('shift_roster')  # "Morning", "Evening", etc.
+        employee_ids = request.data.get('employees', [])  # [2, 5, 10]
 
-        if not date or not shift_assignments:
+        if not date or not shift_roster or not employee_ids:
             return Response(
-                {"error": "Date and assignments data are required"},
+                {"error": "Date, shift roster, and employees are required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Validate all assignments first
+        # Get shift ID from roster name
+        try:
+            shift = WorkingHours.objects.get(name=shift_roster)
+        except WorkingHours.DoesNotExist:
+            return Response(
+                {"error": f"Invalid shift roster: {shift_roster}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         errors = []
         assignments_to_create = []
-        
-        for assignment in shift_assignments:
-            employee_id = assignment.get('employee')
-            shift_id = assignment.get('shift')
-
-            if not employee_id or not shift_id:
-                errors.append(f"Missing employee or shift ID in assignment {assignment}")
-                continue
-
-            # Check if employee already assigned to any shift on this date
-            if EmployeeShiftAssignment.objects.filter(employee_id=employee_id, date=date).exists():
-                errors.append(f"Employee {employee_id} already assigned to a shift on {date}")
+    
+        for employee_id in employee_ids:
+            # Check if employee already assigned
+            if EmployeeShiftAssignment.objects.filter(
+                employee_id=employee_id, 
+                date=date
+            ).exists():
+                errors.append(f"Employee {employee_id} already assigned on {date}")
                 continue
 
             assignments_to_create.append(
                 EmployeeShiftAssignment(
                     date=date,
                     employee_id=employee_id,
-                    shift_id=shift_id
+                    shift_id=shift.id
                 )
             )
 
         if errors:
             return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create all valid assignments
         created_assignments = EmployeeShiftAssignment.objects.bulk_create(assignments_to_create)
         serializer = EmployeeShiftAssignmentSerializer(created_assignments, many=True)
-        
+
         return Response(
             {
-                "message": "Shift assignments created successfully",
+                "message": f"Employees assigned to {shift_roster} shift successfully",
                 "data": serializer.data
             },
             status=status.HTTP_201_CREATED
