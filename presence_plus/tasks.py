@@ -38,62 +38,55 @@ def credit_leave():
     employees = Employee.objects.all()
     active_policies = LeavePolicy.objects.filter(status="active")
 
-    for policy in active_policies:
-        leave_to_credit = 0
+    for employee in employees:
+        hire_date = employee.hire_date
+        if not hire_date:
+            continue  # Skip if hire_date is not set
 
-        if policy.frequency == 6 and today.month in [1, 7]:  
-            leave_to_credit = 1
-        elif today.month % policy.frequency == 0:
-            leave_to_credit = policy.amount * policy.frequency
+        # Get total months since the employee's hire date
+        total_months_since_hire = (today.year - hire_date.year) * 12 + (today.month - hire_date.month)
 
-        for employee in employees:
-            # Get or create leave balance for the employee
-            leave_balance, created = LeaveBalance.objects.get_or_create(
-                employee=employee,
-                leave_policy=policy,
-                defaults={"total": 0, "used": 0},
-            )
+        # Start iterating from the month of hire_date to today
+        for month_offset in range(total_months_since_hire + 1):
+            crediting_date = hire_date + timedelta(days=month_offset * 30)  # Approximate month offset
+            if crediting_date > today:
+                break  # Stop when reaching today's date
 
-            # Credit Leave Logic
-            if leave_to_credit > 0:
-                if policy.carry_forward:
-                    new_total = leave_balance.total + leave_to_credit
-                else:
-                    new_total = leave_to_credit if today.month == 1 else leave_to_credit
+            for policy in active_policies:
+                leave_to_credit = 0
 
-                leave_balance.total = new_total
-                leave_balance.save()
+                # Check if this month should credit leave based on policy frequency
+                if policy.frequency == 6 and crediting_date.month in [1, 7]:  
+                    leave_to_credit = 1
+                elif crediting_date.month % policy.frequency == 0:
+                    leave_to_credit = policy.amount * policy.frequency
 
-                # Create a LeaveTransaction for crediting
-                LeaveTransaction.objects.create(
+                # Get or create leave balance for the employee
+                leave_balance, created = LeaveBalance.objects.get_or_create(
                     employee=employee,
                     leave_policy=policy,
-                    transaction_type="Credit",
-                    date=today,
-                    credit=leave_to_credit,
-                    debit=0,
-                    pending=False
+                    defaults={"total": 0, "used": 0},
                 )
 
-            # **Debit Leave Logic: If employee has pending leave requests**
-            pending_leaves = LeaveRequest.objects.filter(employee=employee, status="approved")
+                # Credit leave if applicable
+                if leave_to_credit > 0:
+                    if policy.carry_forward:
+                        leave_balance.total += leave_to_credit
+                    else:
+                        leave_balance.total = leave_to_credit if crediting_date.month == hire_date.month else leave_to_credit
 
-            for leave in pending_leaves:
-                if leave.days <= leave_balance.total:
-                    leave_balance.total -= leave.days
-                    leave_balance.used += leave.days
                     leave_balance.save()
 
-                    # Create a LeaveTransaction for debiting
+                    # Create a LeaveTransaction for crediting
                     LeaveTransaction.objects.create(
                         employee=employee,
                         leave_policy=policy,
-                        transaction_type="Debit",
-                        date=today,
-                        credit=0,
-                        debit=leave.days,
+                        transaction_type="Credit",
+                        date=crediting_date,
+                        credit=leave_to_credit,
+                        debit=0,
                         pending=False
                     )
 
-    return "Leave credited & debited successfully."
+    return "Leave credited successfully based on hire date."
 
