@@ -1536,7 +1536,7 @@ class EmployeeLeaveBalanceView(APIView):
             leave_requests = LeaveRequest.objects.filter(
                 employee=employee,
                 leave_policy=leave_policy,
-                status__in=["approved", "pending"],  # ✅ Proper filtering
+                status__in=["Approved", "Pending"],  # ✅ Proper filtering
                 cancellation_request=False  # ✅ Exclude canceled leave requests
             )
 
@@ -1557,7 +1557,7 @@ class EmployeeLeaveBalanceView(APIView):
                 "name": leave_type,
                 "used": f"{used}/{total_display} Used",
                 "dates": leave_dates  # ✅ Send full leave duration with status
-                "status" : status
+                # "status" : status
             })
 
         return Response({"leave_balance": leave_data}, status=200)
