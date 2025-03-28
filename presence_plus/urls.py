@@ -76,12 +76,16 @@ urlpatterns = [
     path('working-hours/', WorkingHoursListCreateView.as_view(), name='working_hours'),
     # path('shift-rosters/', ShiftRosterListCreateView.as_view(), name='shift_rosters'),
     path('assign-shift/', AssignShiftView.as_view(), name='assign_shift'),
+    path('assignview/',AssignedShiftView.as_view(), name='assignview'),
     path('employee-shifts/', EmployeeShiftView.as_view(), name='employee_shifts'),
     path('employeedashboardshifts/', EmployeeDasboardShiftView.as_view(), name='employeedashboardshifts'),
     path('shift-colleagues/<str:date>/', ShiftColleaguesView.as_view(), name='shift_colleagues'),
     path('shift/colleagues/', ShiftColleaguesDashboardView.as_view(), name='shift-colleagues-today'),
     path('hrempleavecreate/',HRRequestLeaveView.as_view(), name='heempleavecreate'),
     path('leavenotification/',NotificationListView.as_view(), name='leavenotification'),
-    
+    path('overtimeoverview/',OvertimeSummaryView.as_view(), name='overtimeoverview'),
+    path('overtimeempview/',EmployeeOvertimeDetailView.as_view(), name='overtimeempview'),
+    path('overtimeempassign/',AssignOvertimeView.as_view(), name='overtimeempassign'),
+    path('overtimetotalassign/',FirstAssignOvertimeView.as_view(), name='overtimetotalassign'),
 ]
 urlpatterns += router.urls

@@ -22,14 +22,19 @@ class UserSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 class LeaveRequestSerializer(serializers.ModelSerializer):
-    employee_name = serializers.CharField(source="employee.user.username", read_only=True)
+    employee_name = serializers.CharField(source="employee.name", read_only=True)
     leave_type = serializers.CharField(source="leave_policy.leave_type", read_only=True)  # Fetch from LeavePolicy
 
     class Meta:
         model = LeaveRequest
         fields = ["id", "employee_name", "start_date", "end_date", "reason", "status", "leave_type", "status"]
 
-
+class LeaveRequestHistorySerializer(serializers.ModelSerializer):
+    employee_name = serializers.CharField(source="employee.name", read_only=True)
+    class Meta:
+        model = LeaveRequest
+        fields = ["employee_name", "start_date", "end_date", "reason"]  # Make sure all fields are included
+        # OR explicitly list the fields you want
 
 class LeavePolicySerializer(serializers.ModelSerializer):
     class Meta:
@@ -150,7 +155,7 @@ class EmployeeShiftAssignmentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = EmployeeShiftAssignment
-        fields = ['id', 'date', 'employee', 'employee_name', 'shift_roster', 'shift', 'shift_type',]
+        fields = ['id', 'date', 'employee', 'employee_name', 'shift', 'shift_type',]
 
 class WorkingHoursSerializer(serializers.ModelSerializer):
     class Meta:
@@ -192,9 +197,10 @@ class AttendanceSerializer(serializers.ModelSerializer):
         fields = ["date", "check_in", "check_out", "status"]
 
 class OvertimeSerializer(serializers.ModelSerializer):
+    employee_name = serializers.CharField(source='employee.name', read_only=True)
     class Meta:
         model = Overtime
-        fields = ["date", "hours"]
+        fields = ["date", "hours", "employee_name", "id"]
 
 class EmployeeDetailSerializer(serializers.ModelSerializer):
     attendance = serializers.SerializerMethodField()

@@ -1928,8 +1928,8 @@ class LeaveHistoryView(APIView):
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
-        approved_leaves = LeaveRequest.objects.filter(status="Accepted").order_by("-start_date")
-        serializer = LeaveRequestSerializer(approved_leaves, many=True)
+        approved_leaves = LeaveRequest.objects.filter(status="Approved").order_by("-start_date")
+        serializer = LeaveRequestHistorySerializer(approved_leaves, many=True)
         return Response(serializer.data, status=200)
 #########   employee list view  ####################
 
@@ -2100,7 +2100,7 @@ class AssignShiftView(APIView):
                 )
     
             date = request.data['date']
-            shift_name = request.data['shift_roster']
+            shift_type = request.data['shift_roster']  # Changed from shift_name
             employee_ids = request.data['employees']
         
             # Validate date format
@@ -2112,15 +2112,20 @@ class AssignShiftView(APIView):
                     status=400
                 )
         
-            # Validate shift exists
+            # Validate shift exists - CHANGED THIS PART
             try:
-                shift = WorkingHours.objects.get(name=shift_name)
+                shift = WorkingHours.objects.get(shift_type=shift_type)  # Using shift_type instead of name
             except WorkingHours.DoesNotExist:
+                available_shifts = WorkingHours.objects.values_list('shift_type', flat=True).distinct()
                 return Response(
-                    {"error": f"Shift '{shift_name}' doesn't exist"},
+                    {
+                        "error": f"Shift type '{shift_type}' doesn't exist",
+                        "available_shifts": list(available_shifts)
+                    },
                     status=400
                 )
         
+            # Rest of your code remains the same...
             # Validate employees exist
             valid_employees = Employee.objects.filter(id__in=employee_ids)
             if len(valid_employees) != len(employee_ids):
@@ -2154,7 +2159,7 @@ class AssignShiftView(APIView):
             try:
                 EmployeeShiftAssignment.objects.bulk_create(assignments)
                 return Response(
-                    {"message": f"Assigned {len(assignments)} employees to {shift_name}"},
+                    {"message": f"Assigned {len(assignments)} employees to {shift_type} shift"},
                     status=201
                 )
             except Exception as e:
@@ -2163,7 +2168,7 @@ class AssignShiftView(APIView):
                     status=500
                 )
         except Exception as e:
-            print(f"Unexpected error: {str(e)}")  # Better error logging
+            print(f"Unexpected error: {str(e)}")
             return Response(
                 {"error": "Internal server error"},
                 status=500
@@ -2221,26 +2226,54 @@ class AssignShiftView(APIView):
                 {"error": "Shift assignment not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
-
+class AssignedShiftView(APIView):
     def get(self, request):
         """Get all shift assignments for a specific date"""
-        date = request.query_params.get('date')
-        if not date:
+        try:
+            date = request.query_params.get('date')
+            
+            # Validate date parameter exists
+            if not date:
+                return Response(
+                    {"error": "Date parameter is required (e.g., ?date=2025-03-15)"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validate date format
+            try:
+                parsed_date = datetime.strptime(date, '%Y-%m-%d').date()
+            except ValueError:
+                return Response(
+                    {"error": "Invalid date format. Use YYYY-MM-DD"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Verify database connection
+            from django.db import connection
+            connection.ensure_connection()
+            
+            # Get and serialize data
+            assignments = EmployeeShiftAssignment.objects.filter(date=parsed_date)
+            serializer = EmployeeShiftAssignmentSerializer(assignments, many=True)
+            
             return Response(
-                {"error": "Date parameter is required"},
-                status=status.HTTP_400_BAD_REQUEST
+                {
+                    "date": date,
+                    "count": len(serializer.data),
+                    "assignments": serializer.data
+                },
+                status=status.HTTP_200_OK
             )
-
-        assignments = EmployeeShiftAssignment.objects.filter(date=date)
-        serializer = EmployeeShiftAssignmentSerializer(assignments, many=True)
-        
-        return Response(
-            {
-                "date": date,
-                "assignments": serializer.data
-            },
-            status=status.HTTP_200_OK
-        )
+            
+        except Exception as e:
+            print(f"Server Error: {str(e)}")  # Log to console
+            return Response(
+                {
+                    "error": "Internal server error",
+                    "details": str(e) if settings.DEBUG else None
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class EmployeeShiftView(APIView):
     permission_classes = [IsAuthenticated]
@@ -2248,11 +2281,39 @@ class EmployeeShiftView(APIView):
 
     def get(self, request):
         """Get shifts assigned to the authenticated employee."""
-        employee = request.user.employee
-        today = now().date()
-        shifts = EmployeeShiftAssignment.objects.filter(employee=employee, date__eq=today).order_by('date')
-        serializer = EmployeeShiftAssignmentSerializer(shifts, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        try:
+            # Get employee profile
+            try:
+                employee = request.user.employee
+            except AttributeError:
+                return Response(
+                    {"error": "User has no associated employee profile"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Get today's shifts
+            today = now().date()
+            shifts = EmployeeShiftAssignment.objects.filter(
+                employee=employee,
+                date=today
+            ).order_by('date')
+            
+            # Serialize data
+            serializer = EmployeeShiftAssignmentSerializer(shifts, many=True)
+            return Response(
+                {
+                    "date": today,
+                    "shifts": serializer.data
+                },
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            print(f"Error in EmployeeShiftView: {str(e)}")  # Log the error
+            return Response(
+                {"error": "Internal server error"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class ShiftColleaguesView(APIView):
     permission_classes = [IsAuthenticated]
@@ -2317,3 +2378,152 @@ class NotificationListView(APIView):
         serializer = NotificationSerializer(notifications, many=True)
         return Response(serializer.data)
 
+################    Overtime    #####################
+
+class OvertimeSummaryView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        today = date.today()
+
+        # ✅ 1. Calculate total overtime done by all employees
+        total_overtime = Overtime.objects.aggregate(total_hours=Sum('hours'))['total_hours'] or 0
+
+        # ✅ 2. Count number of employees who have overtime today
+        employees_on_ot_today = Overtime.objects.filter(date=today).values('employee').distinct().count()
+
+        # ✅ 3. Calculate total overtime done this month
+        total_ot_this_month = Overtime.objects.filter(
+            date__year=today.year, date__month=today.month
+        ).aggregate(total_hours=Sum('hours'))['total_hours'] or 0
+
+        # ✅ 4. Get list of employees with their total overtime and designation
+        employees_overtime = (
+            Overtime.objects
+            .values('employee__id', 'employee__name', 'employee__designation')
+            .annotate(total_hours=Sum('hours'))
+            .order_by('-total_hours')  # Sort by highest overtime
+        )
+
+        # ✅ 5. Format the response
+        employee_data = [
+            {
+                "name": emp["employee__name"],
+                "designation": emp["employee__designation"],
+                "total_overtime": emp["total_hours"]
+            }
+            for emp in employees_overtime
+        ]
+
+        return Response({
+            "total_overtime": total_overtime,
+            "employees_on_ot_today": employees_on_ot_today,
+            "total_ot_this_month": total_ot_this_month,
+            "employees_overtime": employee_data
+        }, status=200)
+
+class EmployeeOvertimeDetailView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, employee_id):
+        # ✅ 1. Fetch employee details
+        employee = get_object_or_404(Employee, id=employee_id)
+
+        # ✅ 2. Calculate total overtime hours
+        total_overtime = (
+            Overtime.objects.filter(employee=employee)
+            .aggregate(total_hours=Sum('hours'))['total_hours'] or 0
+        )
+
+        # ✅ 3. Fetch overtime history for the employee
+        overtime_history = (
+            Overtime.objects.filter(employee=employee)
+            .values('date', 'hours')
+            .order_by('-date')  # Sorting by latest overtime
+        )
+
+        # ✅ 4. Format response data
+        history_data = [
+            {"date": ot["date"].strftime("%d %b"), "hours": ot["hours"]}
+            for ot in overtime_history
+        ]
+
+        return Response({
+            "name": employee.name,
+            "designation": employee.designation,
+            "department": employee.department.name if employee.department else "N/A",
+            "total_overtime": total_overtime,
+            "overtime_history": history_data
+        }, status=200) 
+
+class AssignOvertimeView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, employee_id):
+        # ✅ Extract data from request
+        data = request.data
+        date_str = data.get("date")
+        hours = data.get("hours")
+        reason = data.get("reason")
+
+        # ✅ Validate data
+        if not date_str or not hours or not reason:
+            return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ✅ Get employee instance
+        employee = get_object_or_404(Employee, id=employee_id)
+
+        # ✅ Create new overtime entry
+        overtime = Overtime.objects.create(
+            employee=employee,
+            date=date,
+            hours=hours,
+            reason=reason
+        )
+
+        return Response({
+            "message": "Overtime assigned successfully",
+            "overtime": OvertimeSerializer(overtime).data
+        }, status=status.HTTP_201_CREATED)
+
+class FirstAssignOvertimeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        # ✅ Extract Data from Request
+        data = request.data
+        employee_id = data.get("employee_id")
+        date_str = data.get("date")
+        hours = data.get("hours")
+
+        # ✅ Validate Data
+        if not employee_id or not date_str or not hours:
+            return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ✅ Get Employee Instance
+        employee = get_object_or_404(Employee, id=employee_id)
+
+        # ✅ Create Overtime Entry
+        overtime = Overtime.objects.create(
+            employee=employee,
+            date=date,
+            hours=hours
+        )
+
+        return Response({
+            "message": "Overtime assigned successfully",
+            "overtime": OvertimeSerializer(overtime).data
+        }, status=status.HTTP_201_CREATED)

@@ -60,12 +60,12 @@ class WorkingHours(models.Model):
     end_time = models.TimeField()
     status = models.CharField(max_length=20, choices=[('active', 'Active'), ('inactive', 'Inactive')])
 
-    class Overtime(models.Model):
-        employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
-        date = models.DateField()
-        hours = models.IntegerField()
-        reason = models.TextField()
-        status = models.CharField(max_length=10, choices=[('upcoming', 'Upcoming'), ('missed', 'Missed'), ('completed', 'Completed')], default='upcoming')
+class Overtime(models.Model):
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
+    date = models.DateField()
+    hours = models.IntegerField()
+    reason = models.TextField()
+    status = models.CharField(max_length=10, choices=[('upcoming', 'Upcoming'), ('missed', 'Missed'), ('completed', 'Completed')], default='upcoming')
 
 class EmployeeShiftAssignment(models.Model):
     date = models.DateField()
