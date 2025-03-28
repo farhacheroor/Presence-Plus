@@ -929,13 +929,13 @@ class LeaveBalanceSummaryView(APIView):
 
             # ✅ Fetch approved, pending, rejected, and canceled leave requests
             approved_leaves = LeaveRequest.objects.filter(employee=employee, status="Approved")
-            pending_leaves = LeaveRequest.objects.filter(employee=employee, status="Pending")
+            #pending_leaves = LeaveRequest.objects.filter(employee=employee, status="Pending")
             rejected_leaves = LeaveRequest.objects.filter(employee=employee, status="Rejected")
             canceled_leaves = LeaveRequest.objects.filter(employee=employee, status="Cancelled")
 
             # ✅ Sum leave days correctly
             approved_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in approved_leaves)
-            pending_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in pending_leaves)
+            #pending_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in pending_leaves)
             refunded_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in canceled_leaves)
             rejected_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in rejected_leaves)  
 
@@ -948,7 +948,7 @@ class LeaveBalanceSummaryView(APIView):
             data = {
                 "total_leave": total_leave,
                 "used_leave": used_leave,  # ✅ Now fetched from approved leaves
-                "pending_leave": pending_leave_days,
+                #"pending_leave": pending_leave_days,
                 "refunded_leave": refunded_leave_days,
                 "rejected_leave": rejected_leave_days,
                 "available_leave": adjusted_available_leave,  
@@ -1928,8 +1928,14 @@ class LeaveHistoryView(APIView):
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
-        approved_leaves = LeaveRequest.objects.filter(status="Approved").order_by("-start_date")
-        serializer = LeaveRequestHistorySerializer(approved_leaves, many=True)
+        # ✅ Fetch Leaves with "Approved" OR "Rejected" Status
+        approved_rejected_leaves = LeaveRequest.objects.filter(
+            Q(status="Approved") | Q(status="Cancel Rejected")
+        ).order_by("-start_date")
+
+        # ✅ Pass the Correct Variable to the Serializer
+        serializer = LeaveRequestHistorySerializer(approved_rejected_leaves, many=True)
+
         return Response(serializer.data, status=200)
 #########   employee list view  ####################
 
@@ -1939,7 +1945,7 @@ class EmployeeListView(APIView):
 
     def get(self, request):
         employees = Employee.objects.filter(user__role='employee').order_by('name') # Fetch all employees sorted by name
-        serializer = EmployeeSerializers(employees, many=True)
+        serializer = EmployeesSerializers(employees, many=True)
         return Response(serializer.data, status=200)
 
 ############    HR self portal  #####################
@@ -2387,30 +2393,31 @@ class OvertimeSummaryView(APIView):
     def get(self, request):
         today = date.today()
 
-        # ✅ 1. Calculate total overtime done by all employees
+        # 1. Calculate total overtime done by all employees
         total_overtime = Overtime.objects.aggregate(total_hours=Sum('hours'))['total_hours'] or 0
 
-        # ✅ 2. Count number of employees who have overtime today
+        # 2. Count number of employees who have overtime today
         employees_on_ot_today = Overtime.objects.filter(date=today).values('employee').distinct().count()
 
-        # ✅ 3. Calculate total overtime done this month
+        # 3. Calculate total overtime done this month
         total_ot_this_month = Overtime.objects.filter(
             date__year=today.year, date__month=today.month
         ).aggregate(total_hours=Sum('hours'))['total_hours'] or 0
 
-        # ✅ 4. Get list of employees with their total overtime and designation
+        # 4. Get list of employees with their total overtime, designation, and ID
         employees_overtime = (
             Overtime.objects
-            .values('employee__id', 'employee__name', 'employee__designation')
+            .values('employee__id', 'employee__name', 'employee__designation__desig_name')
             .annotate(total_hours=Sum('hours'))
             .order_by('-total_hours')  # Sort by highest overtime
         )
 
-        # ✅ 5. Format the response
+        # 5. Format the response with employee ID
         employee_data = [
             {
+                "employee_id": emp["employee__id"],
                 "name": emp["employee__name"],
-                "designation": emp["employee__designation"],
+                "designation": emp["employee__designation__desig_name"],
                 "total_overtime": emp["total_hours"]
             }
             for emp in employees_overtime
@@ -2423,78 +2430,53 @@ class OvertimeSummaryView(APIView):
             "employees_overtime": employee_data
         }, status=200)
 
+    def generate_excel(self, data):
+        df = pd.DataFrame(data)
+        response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        response["Content-Disposition"] = 'attachment; filename="attendance_report.xlsx"'
+        df.to_excel(response, index=False)
+        return response
+
 class EmployeeOvertimeDetailView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request, employee_id):
-        # ✅ 1. Fetch employee details
-        employee = get_object_or_404(Employee, id=employee_id)
-
-        # ✅ 2. Calculate total overtime hours
-        total_overtime = (
-            Overtime.objects.filter(employee=employee)
-            .aggregate(total_hours=Sum('hours'))['total_hours'] or 0
-        )
-
-        # ✅ 3. Fetch overtime history for the employee
-        overtime_history = (
-            Overtime.objects.filter(employee=employee)
-            .values('date', 'hours')
-            .order_by('-date')  # Sorting by latest overtime
-        )
-
-        # ✅ 4. Format response data
-        history_data = [
-            {"date": ot["date"].strftime("%d %b"), "hours": ot["hours"]}
-            for ot in overtime_history
-        ]
-
-        return Response({
-            "name": employee.name,
-            "designation": employee.designation,
-            "department": employee.department.name if employee.department else "N/A",
-            "total_overtime": total_overtime,
-            "overtime_history": history_data
-        }, status=200) 
-
-class AssignOvertimeView(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, employee_id):
-        # ✅ Extract data from request
-        data = request.data
-        date_str = data.get("date")
-        hours = data.get("hours")
-        reason = data.get("reason")
-
-        # ✅ Validate data
-        if not date_str or not hours or not reason:
-            return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
-            date = datetime.strptime(date_str, "%Y-%m-%d").date()
-        except ValueError:
-            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+            # ✅ Fixed select_related - removed department
+            employee = get_object_or_404(
+                Employee.objects.select_related("designation", "user"),
+                id=employee_id
+            )
 
-        # ✅ Get employee instance
-        employee = get_object_or_404(Employee, id=employee_id)
+            # ✅ Calculate total overtime hours
+            total_overtime = (
+                Overtime.objects.filter(employee=employee)
+                .aggregate(total_hours=Sum('hours'))['total_hours'] or 0
+            )
 
-        # ✅ Create new overtime entry
-        overtime = Overtime.objects.create(
-            employee=employee,
-            date=date,
-            hours=hours,
-            reason=reason
-        )
+            # ✅ Fetch overtime history
+            overtime_history = Overtime.objects.filter(employee=employee).order_by('-date')
 
-        return Response({
-            "message": "Overtime assigned successfully",
-            "overtime": OvertimeSerializer(overtime).data
-        }, status=status.HTTP_201_CREATED)
+            # ✅ Format response data
+            history_data = [
+                {"date": ot.date.strftime("%d %b"), "hours": ot.hours}
+                for ot in overtime_history
+            ]
+
+            return Response({
+                "name": employee.name,
+                "designation": employee.designation.desig_name if employee.designation else "N/A",
+                "department": getattr(employee.user, "department", "N/A"),  # Safe access
+                "total_overtime": total_overtime,
+                "overtime_history": history_data
+            }, status=200)
+
+        except Exception as e:
+            return Response({"error": f"Internal Server Error: {str(e)}"}, status=500)
 
 class FirstAssignOvertimeView(APIView):
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -2503,24 +2485,54 @@ class FirstAssignOvertimeView(APIView):
         employee_id = data.get("employee_id")
         date_str = data.get("date")
         hours = data.get("hours")
+        reason = data.get("reason", "")  # Get reason with empty string as default
 
         # ✅ Validate Data
         if not employee_id or not date_str or not hours:
-            return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Employee ID, date, and hours are required."}, 
+                          status=status.HTTP_400_BAD_REQUEST)
 
         try:
             date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            if date > datetime.now().date():
+                return Response({"error": "Overtime date cannot be in the future."}, 
+                              status=400)
         except ValueError:
-            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, 
+                          status=status.HTTP_400_BAD_REQUEST)
 
         # ✅ Get Employee Instance
         employee = get_object_or_404(Employee, id=employee_id)
 
-        # ✅ Create Overtime Entry
+        # ✅ Check for existing overtime on same date
+        if Overtime.objects.filter(employee=employee, date=date).exists():
+            return Response(
+                {"error": f"Overtime already exists for {employee.name} on {date_str}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # ✅ Validate hours
+        try:
+            hours = float(hours)
+            if hours <= 0:
+                return Response({"error": "Hours must be positive."}, status=400)
+            if hours > 12:  # Example: Max 12 hours per day
+                return Response({"error": "Overtime cannot exceed 12 hours per day."}, 
+                              status=400)
+        except ValueError:
+            return Response({"error": "Invalid hours value."}, status=400)
+
+        # ✅ Validate reason (optional requirement)
+        if not reason.strip():
+            return Response({"error": "Reason for overtime is required."}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+
+        # ✅ Create Overtime Entry with reason
         overtime = Overtime.objects.create(
             employee=employee,
             date=date,
-            hours=hours
+            hours=hours,
+            reason=reason.strip()  # Store cleaned reason
         )
 
         return Response({

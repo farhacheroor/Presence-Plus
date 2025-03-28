@@ -84,8 +84,7 @@ urlpatterns = [
     path('hrempleavecreate/',HRRequestLeaveView.as_view(), name='heempleavecreate'),
     path('leavenotification/',NotificationListView.as_view(), name='leavenotification'),
     path('overtimeoverview/',OvertimeSummaryView.as_view(), name='overtimeoverview'),
-    path('overtimeempview/',EmployeeOvertimeDetailView.as_view(), name='overtimeempview'),
-    path('overtimeempassign/',AssignOvertimeView.as_view(), name='overtimeempassign'),
-    path('overtimetotalassign/',FirstAssignOvertimeView.as_view(), name='overtimetotalassign'),
+    path('employee/overtime/<int:employee_id>/',EmployeeOvertimeDetailView.as_view(), name='overtimeempview'),
+    path('overtimeempassign/',FirstAssignOvertimeView.as_view(), name='overtimeempassign'),
 ]
 urlpatterns += router.urls

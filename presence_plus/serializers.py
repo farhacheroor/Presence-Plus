@@ -27,13 +27,14 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = LeaveRequest
-        fields = ["id", "employee_name", "start_date", "end_date", "reason", "status", "leave_type", "status"]
+        fields = ["id", "employee_name", "start_date", "end_date", "reason", "status", "leave_type", "cancellation_reason"]
 
 class LeaveRequestHistorySerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source="employee.name", read_only=True)
+    leave_type = serializers.CharField(source="leave_policy.leave_type", read_only=True)
     class Meta:
         model = LeaveRequest
-        fields = ["employee_name", "start_date", "end_date", "reason"]  # Make sure all fields are included
+        fields = ["employee_name", "start_date", "end_date", "reason", "leave_type"]  # Make sure all fields are included
         # OR explicitly list the fields you want
 
 class LeavePolicySerializer(serializers.ModelSerializer):
@@ -191,6 +192,11 @@ class EmployeeSerializers(serializers.ModelSerializer):
         model = Employee
         fields = "__all__" 
 
+class EmployeesSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = Employee
+        fields = ["name", "id"]
+
 class AttendanceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Attendance
@@ -200,7 +206,7 @@ class OvertimeSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source='employee.name', read_only=True)
     class Meta:
         model = Overtime
-        fields = ["date", "hours", "employee_name", "id"]
+        fields = ["date", "hours", "employee_name", "id", "reason"]
 
 class EmployeeDetailSerializer(serializers.ModelSerializer):
     attendance = serializers.SerializerMethodField()
