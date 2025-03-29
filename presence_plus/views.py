@@ -1536,7 +1536,7 @@ class EmployeeLeaveBalanceView(APIView):
             leave_requests = LeaveRequest.objects.filter(
                 employee=employee,
                 leave_policy=leave_policy,
-                status__in=["approved", "pending"],
+                status__in=["Approved", "Pending"],
                 cancellation_request=False
             )
 
@@ -2543,7 +2543,7 @@ class FirstAssignOvertimeView(APIView):
 
 ############### Attendance  ##################
 
-class EmployeeDashboardView(APIView):
+class HRAttendanceView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
@@ -2563,14 +2563,10 @@ class EmployeeDashboardView(APIView):
                 end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
 
             # 1. Employee Statistics
-            total_employees = Employee.objects.filter(
-                user__role='employee'
-            ).count()
+            total_employees = Employee.objects.filter(user__role='employee').count()
 
             # 2. Attendance Statistics
-            attendance_stats = Attendance.objects.filter(
-                date__range=[start_date, end_date]
-            ).aggregate(
+            attendance_stats = Attendance.objects.filter(date__range=[start_date, end_date]).aggregate(
                 total_present=Count('id', filter=Q(status='present')),
                 total_absent=Count('id', filter=Q(status='absent')),
                 total_late=Count('id', filter=Q(status='late'))
@@ -2583,34 +2579,23 @@ class EmployeeDashboardView(APIView):
                 attendance_percentage = round((present_days / total_days) * 100, 2) if total_days > 0 else 0
 
             # 3. Pending Requests
-            pending_attendance = AttendanceRequest.objects.filter(
-                status='pending'
-            ).count()
-            
-            pending_leaves = LeaveRequest.objects.filter(
-                status='pending'
-            ).count()
+            pending_attendance = AttendanceRequest.objects.filter(status='pending').count()
+            pending_leaves = LeaveRequest.objects.filter(status='pending').count()
 
             # 4. Detailed Employee Report
-            employees = Employee.objects.filter(
-                user__role='employee'
-            ).select_related(
-                'designation', 'community', 'user'
-            ).annotate(
+            employees = Employee.objects.filter(user__role='employee').select_related('designation', 'community', 'user').annotate(
                 work_days=Count(
                     'attendance',
-                    filter=Q(attendance__status='present') & 
-                    Q(attendance__date__range=[start_date, end_date])
+                    filter=Q(attendance__status='present') & Q(attendance__date__range=[start_date, end_date])
                 ),
                 absent_days=Count(
                     'attendance',
-                    filter=Q(attendance__status='absent') & 
-                    Q(attendance__date__range=[start_date, end_date])
+                    filter=Q(attendance__status='absent') & Q(attendance__date__range=[start_date, end_date])
                 ),
                 approved_leaves=Count(
                     'leaverequest',
                     filter=Q(leaverequest__status='approved') & 
-                    Q(leaverequest__start_date__lte=end_date) &
+                    Q(leaverequest__start_date__lte=end_date) & 
                     Q(leaverequest__end_date__gte=start_date)
                 ),
                 total_overtime=Sum(
@@ -2658,8 +2643,30 @@ class EmployeeDashboardView(APIView):
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            )    
+class HRAttendanceRequestView(APIView):
+    def get_pending_attendance_requests(self, request):
+        """Fetch all pending attendance requests submitted by employees."""
+        try:
+            pending_requests = AttendanceRequest.objects.filter(status='pending').select_related('employee')
 
+            requests_data = []
+            for req in pending_requests:
+                requests_data.append({
+                    "id": req.id,
+                    "employee_id": req.employee.id,
+                    "employee_name": req.employee.name,
+                    "date": req.date.strftime('%Y-%m-%d'),
+                    "checkin_time": req.checkin_time.strftime('%H:%M') if req.checkin_time else None,
+                    "checkout_time": req.checkout_time.strftime('%H:%M') if req.checkout_time else None,
+                    "reason": req.reason,
+                    "submitted_on": req.created_at.strftime('%Y-%m-%d %H:%M'),
+                })
+
+            return Response({"pending_attendance_requests": requests_data}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class GenerateReportView(APIView):
     authentication_classes = [JWTAuthentication]
