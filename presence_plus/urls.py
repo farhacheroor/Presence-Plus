@@ -92,4 +92,4 @@ urlpatterns = [
     path('employee/<int:employee_id>/attendance/', EmployeeAttendanceDetailView.as_view(), name='employee-attendance-detail'),
     path('attendance/add/<int:employee_id>/', AddAttendanceRecordView.as_view(), name='add-attendance'),
 ]
-urlpatterns += router.urls
+urlpatterns += router.urls           

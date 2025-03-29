@@ -1931,7 +1931,7 @@ class LeaveHistoryView(APIView):
     def get(self, request):
         # ✅ Fetch Leaves with "Approved" OR "Rejected" Status
         approved_rejected_leaves = LeaveRequest.objects.filter(
-            Q(status="Approved") | Q(status="Cancel Rejected")
+            Q(status="Approved") & Q(status="Cancel Rejected")
         ).order_by("-start_date")
 
         # ✅ Pass the Correct Variable to the Serializer
@@ -2542,7 +2542,7 @@ class FirstAssignOvertimeView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 ############### Attendance  ##################
-
+from django.db.models import ExpressionWrapper, DurationField
 class HRAttendanceView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -2580,7 +2580,7 @@ class HRAttendanceView(APIView):
 
             # 3. Pending Requests
             pending_attendance = AttendanceRequest.objects.filter(status='pending').count()
-            pending_leaves = LeaveRequest.objects.filter(status='pending').count()
+            pending_leaves = LeaveRequest.objects.filter(status='Pending').count()
 
             # 4. Detailed Employee Report
             employees = Employee.objects.filter(user__role='employee').select_related('designation', 'community', 'user').annotate(
@@ -2594,12 +2594,15 @@ class HRAttendanceView(APIView):
                 ),
                 approved_leaves=Count(
                     'leaverequest',
-                    filter=Q(leaverequest__status='approved') & 
+                    filter=Q(leaverequest__status='Approved') & 
                     Q(leaverequest__start_date__lte=end_date) & 
                     Q(leaverequest__end_date__gte=start_date)
                 ),
                 total_overtime=Sum(
-                    'attendance__check_out' - F('attendance__check_in') - timedelta(hours=8),
+                    ExpressionWrapper(
+                        F('attendance__check_out') - F('attendance__check_in') - timedelta(hours=8),
+                        output_field=DurationField()
+                    ),
                     filter=Q(attendance__date__range=[start_date, end_date])
                 )
             )
@@ -2644,8 +2647,9 @@ class HRAttendanceView(APIView):
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )    
+
 class HRAttendanceRequestView(APIView):
-    def get_pending_attendance_requests(self, request):
+    def get(self, request):
         """Fetch all pending attendance requests submitted by employees."""
         try:
             pending_requests = AttendanceRequest.objects.filter(status='pending').select_related('employee')
@@ -2657,10 +2661,9 @@ class HRAttendanceRequestView(APIView):
                     "employee_id": req.employee.id,
                     "employee_name": req.employee.name,
                     "date": req.date.strftime('%Y-%m-%d'),
-                    "checkin_time": req.checkin_time.strftime('%H:%M') if req.checkin_time else None,
-                    "checkout_time": req.checkout_time.strftime('%H:%M') if req.checkout_time else None,
-                    "reason": req.reason,
-                    "submitted_on": req.created_at.strftime('%Y-%m-%d %H:%M'),
+                    "check_in": req.check_in.strftime('%H:%M') if req.check_in else None,
+                    "check_out": req.check_out.strftime('%H:%M') if req.check_out else None,
+                    "image": request.build_absolute_uri(req.image.url) if req.image else None,  # ✅ Fixed image field
                 })
 
             return Response({"pending_attendance_requests": requests_data}, status=status.HTTP_200_OK)
@@ -2777,6 +2780,7 @@ class GenerateReportView(APIView):
             'end_date': end_date.strftime('%Y-%m-%d'),
             'data': list(overtime_data)
         }
+from datetime import datetime, timedelta
 
 class EmployeeAttendanceDetailView(APIView):
     authentication_classes = [JWTAuthentication]
@@ -2790,18 +2794,18 @@ class EmployeeAttendanceDetailView(APIView):
         emp_details = {
             "name": employee.name,
             "designation": getattr(employee.designation, "desig_name", "N/A"),
-            "department": getattr(employee.user.department, "name", "N/A"),
+            "department": employee.user.department if isinstance(employee.user.department, str) else "N/A",
             "emp_num": employee.emp_num,
         }
 
-        # ✅ Calculate total overtime hours
+        # ✅ Fetch unpaid leave count
+        unpaid_leaves = LeaveBalance.objects.filter(employee=employee, leave_policy__leave_type="unpaid").count()
+
+        # ✅ Fetch total overtime
         total_overtime = (
             Overtime.objects.filter(employee=employee)
-            .aggregate(total_hours=Sum('hours'))['total_hours'] or 0
+            .aggregate(Sum('hours'))['hours__sum'] or 0
         )
-
-        # ✅ Fetch unpaid leave count
-        unpaid_leaves = Leave.objects.filter(employee=employee, leave_type="unpaid").count()
 
         # ✅ Fetch attendance history
         attendance_records = Attendance.objects.filter(employee=employee).order_by('-date')
@@ -2810,17 +2814,29 @@ class EmployeeAttendanceDetailView(APIView):
         attendance_summary = {"present": 0, "late": 0, "absent": 0, "total": 0}
 
         for record in attendance_records:
-            status = "Present" if record.status == "present" else ("Late" if record.status == "late" else "Absent")
+            status_key = record.status.lower()
+
+            # ✅ Convert time to datetime for subtraction
+            if record.check_in and record.check_out:
+                check_in_dt = datetime.combine(record.date, record.check_in)
+                check_out_dt = datetime.combine(record.date, record.check_out)
+                work_hours = check_out_dt - check_in_dt
+                total_hours = str(work_hours).split('.')[0]  # Convert timedelta to HH:MM
+            else:
+                total_hours = "0:00"  # No check-in or check-out
+
             attendance_data.append({
                 "date": record.date.strftime("%d-%m-%Y"),
-                "checkin": record.checkin.strftime("%I:%M%p") if record.checkin else "-",
-                "checkout": record.checkout.strftime("%I:%M%p") if record.checkout else "-",
-                "overtime": f"{record.overtime_hours} hrs" if record.overtime_hours else "-",
-                "status": status,
+                "check_in": record.check_in.strftime("%I:%M%p") if record.check_in else "-",
+                "check_out": record.check_out.strftime("%I:%M%p") if record.check_out else "-",
+                "overtime": f"{record.overtime_hours} hrs" if hasattr(record, "overtime_hours") and record.overtime_hours else "-",
+                "status": record.status.capitalize(),
+                "total_hours": total_hours,  # ✅ Fixed working hours calculation
             })
 
             # ✅ Update attendance summary
-            attendance_summary[status.lower()] += 1
+            if status_key in attendance_summary:
+                attendance_summary[status_key] += 1
             attendance_summary["total"] += 1
 
         return Response({
@@ -2829,7 +2845,7 @@ class EmployeeAttendanceDetailView(APIView):
             "total_overtime": total_overtime,
             "attendance_records": attendance_data,
             "attendance_summary": attendance_summary,  # For graphical statistics
-        }, status=200)
+        }, status=status.HTTP_200_OK)
 
 class AddAttendanceRecordView(APIView):
     authentication_classes = [JWTAuthentication]
@@ -2838,32 +2854,43 @@ class AddAttendanceRecordView(APIView):
     def post(self, request, employee_id):
         try:
             # Extract data from request
-            date = request.data.get("date")  # Expected format: "YYYY-MM-DD"
-            checkin_time = request.data.get("checkin_time")  # Expected format: "HH:MM"
-            checkout_time = request.data.get("checkout_time")  # Expected format: "HH:MM"
+            date_str = request.data.get("date")  # Expected format: "YYYY-MM-DD"
+            check_in_str = request.data.get("check_in")  # Expected format: "HH:MM"
+            check_out_str = request.data.get("check_out")  # Expected format: "HH:MM"
 
-            # Fetch employee based on URL parameter
+            if not date_str or not check_in_str or not check_out_str:
+                return Response({"error": "Missing required fields (date, check_in, check_out)"}, status=400)
+
+            # ✅ Convert date & time to datetime objects
+            attendance_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            check_in = datetime.strptime(check_in_str, "%H:%M").time()
+            check_out = datetime.strptime(check_out_str, "%H:%M").time()
+
+            # ✅ Validate check-in and check-out order
+            if check_out <= check_in:
+                return Response({"error": "Check-out time must be later than check-in time"}, status=400)
+
+            # ✅ Fetch employee based on URL parameter
             employee = get_object_or_404(Employee, id=employee_id)
 
-            # Convert date & time to datetime objects
-            attendance_date = datetime.strptime(date, "%Y-%m-%d").date()
-            checkin = datetime.strptime(checkin_time, "%H:%M").time()
-            checkout = datetime.strptime(checkout_time, "%H:%M").time()
+            # ✅ Calculate worked hours
+            worked_seconds = (datetime.combine(attendance_date, check_out) - datetime.combine(attendance_date, check_in)).seconds
+            worked_hours = round(worked_seconds / 3600, 2)  # Convert seconds to hours
 
-            # Calculate worked hours
-            worked_hours = (datetime.combine(attendance_date, checkout) - datetime.combine(attendance_date, checkin)).seconds / 3600
-
-            # Create attendance record
+            # ✅ Create attendance record
             attendance = Attendance.objects.create(
                 employee=employee,
                 date=attendance_date,
-                checkin=checkin,
-                checkout=checkout,
-                worked_hours=worked_hours,
-                status="present"  # Default status
+                check_in=check_in,
+                check_out=check_out,
+                # worked_hours=worked_hours,
+                status="present",  # Default status
             )
 
             return Response({"message": "Attendance recorded successfully!", "attendance_id": attendance.id}, status=201)
+
+        except ValueError as ve:
+            return Response({"error": f"Invalid date or time format: {str(ve)}"}, status=400)
 
         except Exception as e:
             return Response({"error": str(e)}, status=400)
