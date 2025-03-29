@@ -861,6 +861,7 @@ class LeaveRequestView(APIView):
                     "leave_type": leave.leave_policy.leave_type,  # Fixed here
                     "status": leave.status,
                     "reason": leave.reason,
+                    "cancellation_reason" : leave.cancellation_reason,
                     
                 }
                 for leave in leave_requests
@@ -2444,37 +2445,57 @@ class EmployeeOvertimeDetailView(APIView):
 
     def get(self, request, employee_id):
         try:
-            # ✅ Fixed select_related - removed department
+            # ✅ Fetch employee details
             employee = get_object_or_404(
                 Employee.objects.select_related("designation", "user"),
                 id=employee_id
             )
 
-            # ✅ Calculate total overtime hours
-            total_overtime = (
-                Overtime.objects.filter(employee=employee)
-                .aggregate(total_hours=Sum('hours'))['total_hours'] or 0
-            )
+            # ✅ Fetch only completed overtime records
+            completed_overtime_records = Overtime.objects.filter(
+                employee=employee
+            ).order_by('-date')
 
-            # ✅ Fetch overtime history
-            overtime_history = Overtime.objects.filter(employee=employee).order_by('-date')
+            filtered_overtime = []
+            total_overtime = 0
 
-            # ✅ Format response data
-            history_data = [
-                {"date": ot.date.strftime("%d %b"), "hours": ot.hours}
-                for ot in overtime_history
-            ]
+            for overtime in completed_overtime_records:
+                # ✅ Fetch the corresponding attendance record for the same date
+                attendance_record = Attendance.objects.filter(
+                    employee=employee, date=overtime.date
+                ).first()
+
+                if attendance_record and attendance_record.check_out:
+                    # ✅ Convert check-in and check-out to datetime for calculation
+                    assigned_hours = overtime.hours
+                    actual_worked_seconds = (datetime.combine(overtime.date, attendance_record.check_out) -
+                                             datetime.combine(overtime.date, attendance_record.check_in)).seconds
+                    actual_worked_hours = actual_worked_seconds / 3600
+
+                    # ✅ Determine overtime status
+                    overtime_status = "Completed" if actual_worked_hours >= assigned_hours else "Incomplete"
+
+                    # ✅ Store only completed overtime in response
+                    if overtime_status == "Completed":
+                        total_overtime += assigned_hours
+                        filtered_overtime.append({
+                            "date": overtime.date.strftime("%d %b"),
+                            "assigned_hours": assigned_hours,
+                            "actual_hours": round(actual_worked_hours, 2),
+                            "status": overtime_status
+                        })
 
             return Response({
                 "name": employee.name,
                 "designation": employee.designation.desig_name if employee.designation else "N/A",
                 "department": getattr(employee.user, "department", "N/A"),  # Safe access
                 "total_overtime": total_overtime,
-                "overtime_history": history_data
+                "overtime_history": filtered_overtime
             }, status=200)
 
         except Exception as e:
             return Response({"error": f"Internal Server Error: {str(e)}"}, status=500)
+
 
 class FirstAssignOvertimeView(APIView):
     authentication_classes = [JWTAuthentication]
@@ -2486,27 +2507,28 @@ class FirstAssignOvertimeView(APIView):
         employee_id = data.get("employee_id")
         date_str = data.get("date")
         hours = data.get("hours")
-        reason = data.get("reason", "")  # Get reason with empty string as default
+        reason = data.get("reason", "").strip()  # Get reason with empty string as default
 
         # ✅ Validate Data
         if not employee_id or not date_str or not hours:
-            return Response({"error": "Employee ID, date, and hours are required."}, 
-                          status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Employee ID, date, and hours are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            date = datetime.strptime(date_str, "%Y-%m-%d").date()
-            if date > datetime.now().date():
-                return Response({"error": "Overtime date cannot be in the future."}, 
-                              status=400)
+            overtime_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+            # ✅ Ensure overtime can ONLY be assigned for the future
+            today = date.today()
+            if overtime_date <= today:  # Blocks past and present dates
+                return Response({"error": "Overtime can only be assigned for future dates."}, status=400)
+
         except ValueError:
-            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, 
-                          status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
 
         # ✅ Get Employee Instance
         employee = get_object_or_404(Employee, id=employee_id)
 
-        # ✅ Check for existing overtime on same date
-        if Overtime.objects.filter(employee=employee, date=date).exists():
+        # ✅ Check for existing overtime on the same future date
+        if Overtime.objects.filter(employee=employee, date=overtime_date).exists():
             return Response(
                 {"error": f"Overtime already exists for {employee.name} on {date_str}"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -2518,22 +2540,20 @@ class FirstAssignOvertimeView(APIView):
             if hours <= 0:
                 return Response({"error": "Hours must be positive."}, status=400)
             if hours > 12:  # Example: Max 12 hours per day
-                return Response({"error": "Overtime cannot exceed 12 hours per day."}, 
-                              status=400)
+                return Response({"error": "Overtime cannot exceed 12 hours per day."}, status=400)
         except ValueError:
             return Response({"error": "Invalid hours value."}, status=400)
 
-        # ✅ Validate reason (optional requirement)
-        if not reason.strip():
-            return Response({"error": "Reason for overtime is required."}, 
-                          status=status.HTTP_400_BAD_REQUEST)
+        # ✅ Ensure reason is provided
+        if not reason:
+            return Response({"error": "Reason for overtime is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Create Overtime Entry with reason
+        # ✅ Create Overtime Entry
         overtime = Overtime.objects.create(
             employee=employee,
-            date=date,
+            date=overtime_date,
             hours=hours,
-            reason=reason.strip()  # Store cleaned reason
+            reason=reason
         )
 
         return Response({
@@ -2586,8 +2606,10 @@ class HRAttendanceView(APIView):
             employees = Employee.objects.filter(user__role='employee').select_related('designation', 'community', 'user').annotate(
                 work_days=Count(
                     'attendance',
-                    filter=Q(attendance__status='present') & Q(attendance__date__range=[start_date, end_date])
+                    filter=Q(attendance__status='present') & Q(attendance__date__range=[start_date, end_date]),
+                    distinct=True  # Ensures only unique attendance dates are counted
                 ),
+            
                 absent_days=Count(
                     'attendance',
                     filter=Q(attendance__status='absent') & Q(attendance__date__range=[start_date, end_date])
@@ -2598,9 +2620,11 @@ class HRAttendanceView(APIView):
                     Q(leaverequest__start_date__lte=end_date) & 
                     Q(leaverequest__end_date__gte=start_date)
                 ),
-                total_overtime=Sum(
+                total_overtime = Sum(
                     ExpressionWrapper(
-                        F('attendance__check_out') - F('attendance__check_in') - timedelta(hours=8),
+                        (F('attendance__date') + F('attendance__check_out')) - 
+                        (F('attendance__date') + F('attendance__check_in')) - 
+                        timedelta(hours=8),  # Subtract standard working hours
                         output_field=DurationField()
                     ),
                     filter=Q(attendance__date__range=[start_date, end_date])
@@ -2677,109 +2701,106 @@ class GenerateReportView(APIView):
 
     def get(self, request):
         try:
-            # Get report type and date range
             report_type = request.query_params.get('type', 'attendance')
             start_date_str = request.query_params.get('start_date')
             end_date_str = request.query_params.get('end_date')
-            
-            # Validate dates
+
+            # Validate and convert dates
             start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else None
             end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date() if end_date_str else None
 
             if not start_date or not end_date:
-                return Response(
-                    {'error': 'Both start_date and end_date are required'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                return Response({'error': 'Both start_date and end_date are required'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Generate different report types
+            # Generate data based on report type
             if report_type == 'attendance':
-                data = self.generate_attendance_report(start_date, end_date)
+                data, headers = self.generate_attendance_report(start_date, end_date)
+                file_name = "Attendance_Report.xlsx"
             elif report_type == 'leave':
-                data = self.generate_leave_report(start_date, end_date)
+                data, headers = self.generate_leave_report(start_date, end_date)
+                file_name = "Leave_Report.xlsx"
             elif report_type == 'overtime':
-                data = self.generate_overtime_report(start_date, end_date)
+                data, headers = self.generate_overtime_report(start_date, end_date)
+                file_name = "Overtime_Report.xlsx"
             else:
-                return Response(
-                    {'error': 'Invalid report type. Use attendance/leave/overtime'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                return Response({'error': 'Invalid report type. Use attendance/leave/overtime'}, status=status.HTTP_400_BAD_REQUEST)
 
-            return Response(data, status=status.HTTP_200_OK)
+            # Generate Excel file
+            excel_file = self.create_excel_file(data, headers)
+
+            # Prepare response for file download
+            response = HttpResponse(excel_file.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = f'attachment; filename="{file_name}"'
+            return response
 
         except Exception as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def generate_attendance_report(self, start_date, end_date):
-        attendance_data = Attendance.objects.filter(
-            date__range=[start_date, end_date]
-        ).values(
-            'employee__name',
-            'employee__emp_num',
-            'employee__designation__desig_name'
+        data = Attendance.objects.filter(date__range=[start_date, end_date]).values(
+            'employee__name', 'employee__emp_num', 'employee__designation__desig_name'
         ).annotate(
             present_days=Count('id', filter=Q(status='present')),
             absent_days=Count('id', filter=Q(status='absent')),
             late_days=Count('id', filter=Q(status='late'))
         ).order_by('employee__name')
 
-        return {
-            'report_type': 'attendance',
-            'start_date': start_date.strftime('%Y-%m-%d'),
-            'end_date': end_date.strftime('%Y-%m-%d'),
-            'data': list(attendance_data)
-        }
+        headers = ["Employee Name", "Employee Number", "Designation", "Present Days", "Absent Days", "Late Days"]
+        formatted_data = [
+            [entry['employee__name'], entry['employee__emp_num'], entry['employee__designation__desig_name'],
+             entry['present_days'], entry['absent_days'], entry['late_days']] for entry in data
+        ]
+        return formatted_data, headers
 
     def generate_leave_report(self, start_date, end_date):
-        leave_data = LeaveRequest.objects.filter(
-            start_date__lte=end_date,
-            end_date__gte=start_date
-        ).values(
-            'employee__name',
-            'employee__emp_num',
-            'leave_policy__name',
-            'start_date',
-            'end_date',
-            'status',
-            'reason'
+        data = LeaveRequest.objects.filter(start_date__lte=end_date, end_date__gte=start_date).values(
+            'employee__name', 'employee__emp_num', 'leave_policy__name', 'start_date', 'end_date', 'status', 'reason'
         ).order_by('-start_date')
 
-        return {
-            'report_type': 'leave',
-            'start_date': start_date.strftime('%Y-%m-%d'),
-            'end_date': end_date.strftime('%Y-%m-%d'),
-            'data': list(leave_data)
-        }
+        headers = ["Employee Name", "Employee Number", "Leave Type", "Start Date", "End Date", "Status", "Reason"]
+        formatted_data = [
+            [entry['employee__name'], entry['employee__emp_num'], entry['leave_policy__name'],
+             entry['start_date'].strftime('%Y-%m-%d'), entry['end_date'].strftime('%Y-%m-%d'), entry['status'], entry['reason']]
+            for entry in data
+        ]
+        return formatted_data, headers
 
     def generate_overtime_report(self, start_date, end_date):
-        overtime_data = Attendance.objects.filter(
-            date__range=[start_date, end_date],
-            check_out__isnull=False,
-            check_in__isnull=False
-        ).annotate(
-            overtime=ExpressionWrapper(
-                F('check_out') - F('check_in') - timedelta(hours=8),
-                output_field=fields.DurationField()
-            )
+        data = Attendance.objects.filter(date__range=[start_date, end_date], check_out__isnull=False, check_in__isnull=False).annotate(
+            overtime=ExpressionWrapper(F('check_out') - F('check_in') - timedelta(hours=8), output_field=fields.DurationField())
         ).values(
-            'employee__name',
-            'employee__emp_num',
-            'date'
+            'employee__name', 'employee__emp_num', 'date'
         ).annotate(
             total_overtime=Sum('overtime')
-        ).filter(
-            total_overtime__gt=timedelta(0)
-        ).order_by('-total_overtime')
+        ).filter(total_overtime__gt=timedelta(0)).order_by('-total_overtime')
 
-        return {
-            'report_type': 'overtime',
-            'start_date': start_date.strftime('%Y-%m-%d'),
-            'end_date': end_date.strftime('%Y-%m-%d'),
-            'data': list(overtime_data)
-        }
+        headers = ["Employee Name", "Employee Number", "Date", "Total Overtime (hh:mm:ss)"]
+        formatted_data = [
+            [entry['employee__name'], entry['employee__emp_num'], entry['date'].strftime('%Y-%m-%d'),
+             str(entry['total_overtime'])] for entry in data
+        ]
+        return formatted_data, headers
+
+    def create_excel_file(self, data, headers):
+        # Create a new Excel workbook
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(headers)
+
+        # Apply bold font to header row
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+
+        # Insert data into Excel
+        for row in data:
+            ws.append(row)
+
+        # Save to a BytesIO stream
+        excel_stream = BytesIO()
+        wb.save(excel_stream)
+        excel_stream.seek(0)  # Move the cursor to the start of the stream
+        return excel_stream
+
 from datetime import datetime, timedelta
 
 class EmployeeAttendanceDetailView(APIView):
