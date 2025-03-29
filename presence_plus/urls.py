@@ -86,5 +86,9 @@ urlpatterns = [
     path('overtimeoverview/',OvertimeSummaryView.as_view(), name='overtimeoverview'),
     path('employee/overtime/<int:employee_id>/',EmployeeOvertimeDetailView.as_view(), name='overtimeempview'),
     path('overtimeempassign/',FirstAssignOvertimeView.as_view(), name='overtimeempassign'),
+    path('attendancedashboard/', EmployeeDashboardView.as_view(), name='attendancedashboard'),
+    path('attendancereports/', GenerateReportView.as_view(), name='attendancereports'),
+    path('employee/<int:employee_id>/attendance/', EmployeeAttendanceDetailView.as_view(), name='employee-attendance-detail'),
+    path('attendance/add/<int:employee_id>/', AddAttendanceRecordView.as_view(), name='add-attendance'),
 ]
 urlpatterns += router.urls
