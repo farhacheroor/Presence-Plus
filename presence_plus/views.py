@@ -1911,7 +1911,7 @@ class PendingLeaveCancellationRequestsView(APIView):
         data = [
             {
                 "id": leave.id,
-                "employee": leave.employee.name(),
+                "employee": leave.employee.name,
                 "leave_type": leave.leave_policy.leave_type if leave.leave_policy else "Unknown",
                 "reason": leave.reason,
                 "start_date": leave.start_date,
