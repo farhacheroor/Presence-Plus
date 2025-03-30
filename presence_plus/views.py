@@ -428,129 +428,129 @@ class LeaveRequestListView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-###############     leave approve or reject #################
+# ###############     leave approve or reject #################
 
-class ManageLeaveRequestView(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAuthenticated]  # Ensure only logged-in users can access
+# class ManageLeaveRequestView(APIView):
+#     authentication_classes = [JWTAuthentication]
+#     permission_classes = [permissions.IsAuthenticated]  # Ensure only logged-in users can access
 
-    def post(self, request, leave_id):
-        try:
-            # Fetch the leave request (404 if not found)
-            leave_request = get_object_or_404(LeaveRequest, id=leave_id)
+#     def post(self, request, leave_id):
+#         try:
+#             # Fetch the leave request (404 if not found)
+#             leave_request = get_object_or_404(LeaveRequest, id=leave_id)
 
-            # Ensure only HR/Admin can approve/reject
-            if request.user.role.lower() not in ["hr", "admin"]:
-                return Response({"error": "Permission denied"}, status=status.HTTP_403_FORBIDDEN)
+#             # Ensure only HR/Admin can approve/reject
+#             if request.user.role.lower() not in ["hr", "admin"]:
+#                 return Response({"error": "Permission denied"}, status=status.HTTP_403_FORBIDDEN)
 
-            action = request.data.get("action")  # Expected: "approve" or "reject"
+#             action = request.data.get("action")  # Expected: "approve" or "reject"
 
-            # Validate action
-            if action not in ["approve", "reject"]:
-                return Response({"error": "Invalid action. Use 'approve' or 'reject'."}, status=status.HTTP_400_BAD_REQUEST)
+#             # Validate action
+#             if action not in ["approve", "reject"]:
+#                 return Response({"error": "Invalid action. Use 'approve' or 'reject'."}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Prevent modifying an already processed request
-            if leave_request.status in ["approved", "rejected"]:
-                return Response({"error": f"Leave request is already {leave_request.status}"}, status=status.HTTP_400_BAD_REQUEST)
+#             # Prevent modifying an already processed request
+#             if leave_request.status in ["approved", "rejected"]:
+#                 return Response({"error": f"Leave request is already {leave_request.status}"}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Update status based on action
-            leave_request.status = "approved" if action == "approve" else "rejected"
-            leave_request.save()
+#             # Update status based on action
+#             leave_request.status = "approved" if action == "approve" else "rejected"
+#             leave_request.save()
 
-            return Response({"message": f"Leave request {action}d successfully!"}, status=status.HTTP_200_OK)
+#             return Response({"message": f"Leave request {action}d successfully!"}, status=status.HTTP_200_OK)
 
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+#         except Exception as e:
+#             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-###########     leave cancellation approve/ reject  #####################
+# ###########     leave cancellation approve/ reject  #####################
 
-class ManageCancellationRequestView(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]  # Only admins can approve/reject
+# class ManageCancellationRequestView(APIView):
+#     authentication_classes = [JWTAuthentication]
+#     permission_classes = [IsAuthenticated]  # Only admins can approve/reject
 
-    def post(self, request, leave_id):
-        try:
-            leave_request = LeaveRequest.objects.get(id=leave_id)
+#     def post(self, request, leave_id):
+#         try:
+#             leave_request = LeaveRequest.objects.get(id=leave_id)
 
-            if not leave_request.cancellation_request:
-                return Response({"error": "No cancellation request for this leave"}, status=status.HTTP_400_BAD_REQUEST)
+#             if not leave_request.cancellation_request:
+#                 return Response({"error": "No cancellation request for this leave"}, status=status.HTTP_400_BAD_REQUEST)
 
-            action = request.data.get("action")  # "approve" or "reject"
+#             action = request.data.get("action")  # "approve" or "reject"
 
-            if action == "approve":
-                leave_request.status = "cancelled"
-                leave_request.cancellation_request = False
-            elif action == "reject":
-                leave_request.cancellation_request = False  # Reset request
-            else:
-                return Response({"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST)
+#             if action == "approve":
+#                 leave_request.status = "cancelled"
+#                 leave_request.cancellation_request = False
+#             elif action == "reject":
+#                 leave_request.cancellation_request = False  # Reset request
+#             else:
+#                 return Response({"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST)
 
-            leave_request.save()
-            return Response({"message": f"Cancellation request {action}d successfully"}, status=status.HTTP_200_OK)
+#             leave_request.save()
+#             return Response({"message": f"Cancellation request {action}d successfully"}, status=status.HTTP_200_OK)
 
-        except LeaveRequest.DoesNotExist:
-            return Response({"error": "Leave request not found"}, status=status.HTTP_404_NOT_FOUND)
+#         except LeaveRequest.DoesNotExist:
+#             return Response({"error": "Leave request not found"}, status=status.HTTP_404_NOT_FOUND)
 
 #################       attendance report generator ########################
 
-class AttendanceReportView(APIView):
-    authentication_classes = [JWTAuthentication]  
-    permission_classes = [IsAuthenticated]
+# class AttendanceReportView(APIView):
+#     authentication_classes = [JWTAuthentication]  
+#     permission_classes = [IsAuthenticated]
 
-    def get(self, request, format=None):
-        report_format = request.GET.get("format", "json")  # Default to JSON
-        start_date = request.GET.get("start_date")
-        end_date = request.GET.get("end_date")
-        #department = request.GET.get("department")
+#     def get(self, request, format=None):
+#         report_format = request.GET.get("format", "json")  # Default to JSON
+#         start_date = request.GET.get("start_date")
+#         end_date = request.GET.get("end_date")
+#         #department = request.GET.get("department")
 
-        start_date = parse_date(start_date) if start_date else None
-        end_date = parse_date(end_date) if end_date else None
+#         start_date = parse_date(start_date) if start_date else None
+#         end_date = parse_date(end_date) if end_date else None
 
-        employees = Employee.objects.all()
+#         employees = Employee.objects.all()
 
-        # if department:
-        #     employees = employees.filter(user__department=department)
+#         # if department:
+#         #     employees = employees.filter(user__department=department)
 
-        report_data = []
-        for emp in employees:
-            attendance_qs = Attendance.objects.filter(employee=emp)
+#         report_data = []
+#         for emp in employees:
+#             attendance_qs = Attendance.objects.filter(employee=emp)
 
-            if start_date and end_date:
-                attendance_qs = attendance_qs.filter(date__range=[start_date, end_date])
+#             if start_date and end_date:
+#                 attendance_qs = attendance_qs.filter(date__range=[start_date, end_date])
 
-            # Ensuring attendance records exist before processing
-            if not attendance_qs.exists():
-                continue  # Skip employees with no attendance data
+#             # Ensuring attendance records exist before processing
+#             if not attendance_qs.exists():
+#                 continue  # Skip employees with no attendance data
 
-            total_working_days = attendance_qs.count()
-            overtime = attendance_qs.filter(overtime=True).count()
-            leave_days = attendance_qs.filter(status="leave").count()
+#             total_working_days = attendance_qs.count()
+#             overtime = attendance_qs.filter(overtime=True).count()
+#             leave_days = attendance_qs.filter(status="leave").count()
 
-            report_data.append({
-                "Employee Name": emp.name,
-                "Employee ID": emp.emp_num,
-                "Department": emp.user.department if emp.user else "N/A",
-                "Total Working Days": total_working_days,
-                "Overtime Hours": overtime,
-                "Leaves Taken": leave_days,
-            })
+#             report_data.append({
+#                 "Employee Name": emp.name,
+#                 "Employee ID": emp.emp_num,
+#                 "Department": emp.user.department if emp.user else "N/A",
+#                 "Total Working Days": total_working_days,
+#                 "Overtime Hours": overtime,
+#                 "Leaves Taken": leave_days,
+#             })
 
-        if not report_data:
-            return Response(
-                {"message": "No attendance records found for the selected filters"},
-                status=status.HTTP_200_OK,
-            )
+#         if not report_data:
+#             return Response(
+#                 {"message": "No attendance records found for the selected filters"},
+#                 status=status.HTTP_200_OK,
+#             )
 
-        if report_format == "excel":
-            return self.generate_excel(report_data)
-        return Response(report_data, status=status.HTTP_200_OK)
+#         if report_format == "excel":
+#             return self.generate_excel(report_data)
+#         return Response(report_data, status=status.HTTP_200_OK)
 
-    def generate_excel(self, data):
-        df = pd.DataFrame(data)
-        response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        response["Content-Disposition"] = 'attachment; filename="attendance_report.xlsx"'
-        df.to_excel(response, index=False)
-        return response
+#     def generate_excel(self, data):
+#         df = pd.DataFrame(data)
+#         response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+#         response["Content-Disposition"] = 'attachment; filename="attendance_report.xl"'
+#         df.to_excel(response, index=False)
+#         return response
 
 #################  leave policy creation #############
 
@@ -856,12 +856,14 @@ class LeaveRequestView(APIView):
             data = [
                 {
                     "id": leave.id,
+                    "name": leave.employee.name,
                     "start_date": leave.start_date,
                     "end_date": leave.end_date,
                     "leave_type": leave.leave_policy.leave_type,  # Fixed here
                     "status": leave.status,
                     "reason": leave.reason,
                     "cancellation_reason" : leave.cancellation_reason,
+                    "image" : request.build_absolute_uri(leave.image.url) if leave.image else None,
                     
                 }
                 for leave in leave_requests
@@ -1924,21 +1926,40 @@ class PendingLeaveCancellationRequestsView(APIView):
 
         return Response(data, status=status.HTTP_200_OK)
 
-##############  HR leave history view  #####################
+##############  HR and admin leave history view  #####################
 class LeaveHistoryView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
-        # ✅ Fetch Leaves with "Approved" OR "Rejected" Status
-        approved_rejected_leaves = LeaveRequest.objects.filter(
-            Q(status="Approved") & Q(status="Cancel Rejected")
-        ).order_by("-start_date")
+        try:
+            user = request.user  # ✅ Get the authenticated user
+            user_role = user.role.lower()  # ✅ Fetch role from User model (convert to lowercase)
 
-        # ✅ Pass the Correct Variable to the Serializer
-        serializer = LeaveRequestHistorySerializer(approved_rejected_leaves, many=True)
+            if user_role == "hr":
+                # HR can view employees' leave history
+                leave_history = LeaveRequest.objects.filter(
+                    employee__user__role="employee",  # ✅ Ensure this matches actual stored role
+                    status__in=["Approved", "Cancel Rejected"]
+                ).order_by("-start_date")
 
-        return Response(serializer.data, status=200)
+            elif user_role == "admin":
+                # Admin can view HRs' leave history
+                leave_history = LeaveRequest.objects.filter(
+                    employee__user__role="hr",  # ✅ Ensure this matches actual stored role
+                    status__in=["Approved", "Cancel Rejected"]
+                ).order_by("-start_date")
+
+            else:
+                return Response({"error": "Unauthorized access"}, status=403)
+
+            # ✅ Serialize the response
+            serializer = LeaveRequestHistorySerializer(leave_history, many=True)
+            return Response(serializer.data, status=200)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
 #########   employee list view  ####################
 
 class EmployeeListView(APIView):
@@ -2006,8 +2027,8 @@ class HRMonthlyAttendanceView(APIView):
 
             attendance_list.append({
                 "status": record.status,
-                "check_in": check_in,  # ✅ Time object, not string
-                "check_out": check_out,  # ✅ Time object, not string
+                "check_in": check_in, 
+                "check_out": check_out, 
                 "overtime_hours": round(overtime_hours, 2)
             })
 
@@ -2021,8 +2042,8 @@ class HRMonthlyAttendanceView(APIView):
             "late_days": late_days,
             "total_overtime_hours": round(total_overtime_hours, 2),
             "attendance_percentage": round(attendance_percentage, 2),
-            "check_in": today_check_in,  # ✅ Time object
-            "check_out": today_check_out,  # ✅ Time object
+            "check_in": today_check_in,  
+            "check_out": today_check_out, 
         }
 
         return Response(data, status=200)
@@ -2030,8 +2051,8 @@ class HRMonthlyAttendanceView(APIView):
 #############   create community    ############
 
 class CommunityView(APIView):
-    authentication_classes = [JWTAuthentication]  # Add authentication if required
-    permission_classes = [permissions.IsAuthenticated]  # Restrict to authenticated users
+    authentication_classes = [JWTAuthentication]  
+    permission_classes = [permissions.IsAuthenticated]  
 
     def get(self, request):
         communities = Community.objects.all()
@@ -2432,11 +2453,54 @@ class OvertimeSummaryView(APIView):
             "employees_overtime": employee_data
         }, status=200)
 
-    def generate_excel(self, data):
-        df = pd.DataFrame(data)
-        response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        response["Content-Disposition"] = 'attachment; filename="attendance_report.xlsx"'
-        df.to_excel(response, index=False)
+class OvertimeSummaryDownloadView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        today = date.today()
+
+        # Fetch overtime data
+        total_overtime = Overtime.objects.aggregate(total_hours=Sum('hours'))['total_hours'] or 0
+        employees_on_ot_today = Overtime.objects.filter(date=today).values('employee').distinct().count()
+        total_ot_this_month = Overtime.objects.filter(
+            date__year=today.year, date__month=today.month
+        ).aggregate(total_hours=Sum('hours'))['total_hours'] or 0
+
+        employees_overtime = (
+            Overtime.objects
+            .values('employee__id', 'employee__name', 'employee__designation__desig_name')
+            .annotate(total_hours=Sum('hours'))
+            .order_by('-total_hours')  # Sort by highest overtime
+        )
+
+        # Create an Excel workbook and sheet
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Overtime Summary"
+
+        # Define headers
+        headers = ["Employee ID", "Name", "Designation", "Total Overtime (hrs)"]
+        ws.append(headers)
+
+        # Apply styling to headers
+        for col in range(1, len(headers) + 1):
+            ws.cell(row=1, column=col).font = Font(bold=True)
+
+        # Add employee data
+        for emp in employees_overtime:
+            ws.append([
+                emp["employee__id"],
+                emp["employee__name"],
+                emp["employee__designation__desig_name"],
+                emp["total_hours"]
+            ])
+
+        # Generate the Excel file in memory
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="Overtime_Summary_{today}.xlsx"'
+        
+        wb.save(response)
         return response
 
 class EmployeeOvertimeDetailView(APIView):
@@ -2694,112 +2758,149 @@ class HRAttendanceRequestView(APIView):
 
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+import openpyxl
+from openpyxl.styles import Font
 class GenerateReportView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         try:
-            report_type = request.query_params.get('type', 'attendance')
+            # Get date filters
             start_date_str = request.query_params.get('start_date')
             end_date_str = request.query_params.get('end_date')
+            #department = request.query_params.get('department')  # Get department filter
 
-            # Validate and convert dates
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else None
-            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date() if end_date_str else None
+            end_date = datetime.now().date()
+            start_date = end_date - timedelta(days=30)
 
-            if not start_date or not end_date:
-                return Response({'error': 'Both start_date and end_date are required'}, status=status.HTTP_400_BAD_REQUEST)
+            if start_date_str:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
 
-            # Generate data based on report type
-            if report_type == 'attendance':
-                data, headers = self.generate_attendance_report(start_date, end_date)
-                file_name = "Attendance_Report.xlsx"
-            elif report_type == 'leave':
-                data, headers = self.generate_leave_report(start_date, end_date)
-                file_name = "Leave_Report.xlsx"
-            elif report_type == 'overtime':
-                data, headers = self.generate_overtime_report(start_date, end_date)
-                file_name = "Overtime_Report.xlsx"
-            else:
-                return Response({'error': 'Invalid report type. Use attendance/leave/overtime'}, status=status.HTTP_400_BAD_REQUEST)
+            # Employee Queryset with Department Filter
+            employees = Employee.objects.filter(user__role='employee')
+            # if department:
+            #     employees = employees.filter(user__department=department)  # Assuming department model has a `name` field
 
-            # Generate Excel file
-            excel_file = self.create_excel_file(data, headers)
+            total_employees = employees.count()
 
-            # Prepare response for file download
-            response = HttpResponse(excel_file.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-            response['Content-Disposition'] = f'attachment; filename="{file_name}"'
-            return response
+            # Attendance Statistics for Filtered Employees
+            attendance_stats = Attendance.objects.filter(
+                date__range=[start_date, end_date],
+                employee__in=employees
+            ).aggregate(
+                total_present=Count('id', filter=Q(status='present')),
+                total_absent=Count('id', filter=Q(status='absent')),
+                total_late=Count('id', filter=Q(status='late'))
+            )
+
+            attendance_percentage = 0
+            if total_employees > 0:
+                total_days = total_employees * (end_date - start_date).days
+                present_days = attendance_stats['total_present']
+                attendance_percentage = round((present_days / total_days) * 100, 2) if total_days > 0 else 0
+
+            # Pending Requests
+            pending_attendance = AttendanceRequest.objects.filter(status='pending').count()
+            pending_leaves = LeaveRequest.objects.filter(status='Pending').count()
+
+            # Employee Detailed Report with Department Filter
+            employees = employees.select_related('designation', 'community', 'user').annotate(
+                work_days=Count(
+                    'attendance',
+                    filter=Q(attendance__status='present') & Q(attendance__date__range=[start_date, end_date]),
+                    distinct=True
+                ),
+                absent_days=Count(
+                    'attendance',
+                    filter=Q(attendance__status='absent') & Q(attendance__date__range=[start_date, end_date])
+                ),
+                approved_leaves=Count(
+                    'leaverequest',
+                    filter=Q(leaverequest__status='Approved') &
+                    Q(leaverequest__start_date__lte=end_date) &
+                    Q(leaverequest__end_date__gte=start_date)
+                ),
+                total_overtime=Sum(
+                    ExpressionWrapper(
+                        (F('attendance__date') + F('attendance__check_out')) -
+                        (F('attendance__date') + F('attendance__check_in')) -
+                        timedelta(hours=8),
+                        output_field=DurationField()
+                    ),
+                    filter=Q(attendance__date__range=[start_date, end_date])
+                )
+            )
+
+            # Generate Excel File
+            return self.generate_excel_report(start_date, end_date, total_employees, attendance_stats,
+                                            attendance_percentage, pending_attendance, pending_leaves, employees)
 
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
-    def generate_attendance_report(self, start_date, end_date):
-        data = Attendance.objects.filter(date__range=[start_date, end_date]).values(
-            'employee__name', 'employee__emp_num', 'employee__designation__desig_name'
-        ).annotate(
-            present_days=Count('id', filter=Q(status='present')),
-            absent_days=Count('id', filter=Q(status='absent')),
-            late_days=Count('id', filter=Q(status='late'))
-        ).order_by('employee__name')
-
-        headers = ["Employee Name", "Employee Number", "Designation", "Present Days", "Absent Days", "Late Days"]
-        formatted_data = [
-            [entry['employee__name'], entry['employee__emp_num'], entry['employee__designation__desig_name'],
-             entry['present_days'], entry['absent_days'], entry['late_days']] for entry in data
-        ]
-        return formatted_data, headers
-
-    def generate_leave_report(self, start_date, end_date):
-        data = LeaveRequest.objects.filter(start_date__lte=end_date, end_date__gte=start_date).values(
-            'employee__name', 'employee__emp_num', 'leave_policy__name', 'start_date', 'end_date', 'status', 'reason'
-        ).order_by('-start_date')
-
-        headers = ["Employee Name", "Employee Number", "Leave Type", "Start Date", "End Date", "Status", "Reason"]
-        formatted_data = [
-            [entry['employee__name'], entry['employee__emp_num'], entry['leave_policy__name'],
-             entry['start_date'].strftime('%Y-%m-%d'), entry['end_date'].strftime('%Y-%m-%d'), entry['status'], entry['reason']]
-            for entry in data
-        ]
-        return formatted_data, headers
-
-    def generate_overtime_report(self, start_date, end_date):
-        data = Attendance.objects.filter(date__range=[start_date, end_date], check_out__isnull=False, check_in__isnull=False).annotate(
-            overtime=ExpressionWrapper(F('check_out') - F('check_in') - timedelta(hours=8), output_field=fields.DurationField())
-        ).values(
-            'employee__name', 'employee__emp_num', 'date'
-        ).annotate(
-            total_overtime=Sum('overtime')
-        ).filter(total_overtime__gt=timedelta(0)).order_by('-total_overtime')
-
-        headers = ["Employee Name", "Employee Number", "Date", "Total Overtime (hh:mm:ss)"]
-        formatted_data = [
-            [entry['employee__name'], entry['employee__emp_num'], entry['date'].strftime('%Y-%m-%d'),
-             str(entry['total_overtime'])] for entry in data
-        ]
-        return formatted_data, headers
-
-    def create_excel_file(self, data, headers):
-        # Create a new Excel workbook
+    def generate_excel_report(self, start_date, end_date, total_employees, attendance_stats,
+                          attendance_percentage, pending_attendance, pending_leaves, employees):
+        # Create workbook and sheet
         wb = openpyxl.Workbook()
         ws = wb.active
+        ws.title = "HR Attendance Report"
+
+        # Header Styles
+        bold_font = Font(bold=True)
+
+        # Write Summary Data
+        ws.append(["HR Attendance Report"])
+        ws.append([f"Report Date Range: {start_date} to {end_date}"])
+        ws.append([])
+        ws.append(["Total Employees", total_employees])
+        ws.append(["Total Present Days", attendance_stats['total_present']])
+        ws.append(["Total Absent Days", attendance_stats['total_absent']])
+        ws.append(["Total Late Days", attendance_stats['total_late']])
+        ws.append(["Attendance Percentage", f"{attendance_percentage}%"])
+        ws.append(["Pending Attendance Requests", pending_attendance])
+        ws.append(["Pending Leave Requests", pending_leaves])
+        ws.append([])
+
+        # Set column names
+        headers = ["Emp ID", "Emp Num", "Name", "Designation", "Community", "Work Days",
+                "Absent Days", "Approved Leaves", "Total Overtime"]
         ws.append(headers)
 
-        # Apply bold font to header row
-        for cell in ws[1]:
-            cell.font = Font(bold=True)
+        # Bold Header Row
+        for cell in ws[ws.max_row]:
+            cell.font = bold_font
 
-        # Insert data into Excel
-        for row in data:
-            ws.append(row)
+        # Write Employee Data
+        for emp in employees:
+            ws.append([
+                emp.id,
+                emp.emp_num,
+                emp.name,
+                emp.designation.desig_name if emp.designation else "N/A",
+                emp.community.community_name if emp.community else "N/A",
+                emp.work_days or 0,
+                emp.absent_days or 0,
+                emp.approved_leaves or 0,
+                str(emp.total_overtime).split('.')[0] if emp.total_overtime else '0:00'
+            ])
 
-        # Save to a BytesIO stream
-        excel_stream = BytesIO()
-        wb.save(excel_stream)
-        excel_stream.seek(0)  # Move the cursor to the start of the stream
-        return excel_stream
+        # Create response with Excel file
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename=HR_Attendance_Report_{start_date}_to_{end_date}.xlsx'
+
+        # Save workbook to response
+        wb.save(response)
+        
+        return response  # ✅ Make sure response is returned
+
 
 from datetime import datetime, timedelta
 
@@ -2915,3 +3016,68 @@ class AddAttendanceRecordView(APIView):
 
         except Exception as e:
             return Response({"error": str(e)}, status=400)
+
+class EmployeeAttendanceDashDetailView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # ✅ Fetch the logged-in employee
+        employee = get_object_or_404(Employee, user=request.user)
+
+        # ✅ Fetch employee number, designation, department
+        emp_details = {
+            "name": employee.name,
+            "designation": getattr(employee.designation, "desig_name", "N/A"),
+            "department": employee.user.department if isinstance(employee.user.department, str) else "N/A",
+            "emp_num": employee.emp_num,
+        }
+
+        # ✅ Fetch unpaid leave count
+        unpaid_leaves = LeaveBalance.objects.filter(employee=employee, leave_policy__leave_type="unpaid").count()
+
+        # ✅ Fetch total overtime
+        total_overtime = (
+            Overtime.objects.filter(employee=employee)
+            .aggregate(Sum('hours'))['hours__sum'] or 0
+        )
+
+        # ✅ Fetch attendance history of the logged-in employee
+        attendance_records = Attendance.objects.filter(employee=employee).order_by('-date')
+
+        attendance_data = []
+        attendance_summary = {"present": 0, "late": 0, "absent": 0, "total": 0}
+
+        for record in attendance_records:
+            status_key = record.status.lower()
+
+            # ✅ Convert time to datetime for subtraction
+            if record.check_in and record.check_out:
+                check_in_dt = datetime.combine(record.date, record.check_in)
+                check_out_dt = datetime.combine(record.date, record.check_out)
+                work_hours = check_out_dt - check_in_dt
+                total_hours = str(work_hours).split('.')[0]  # Convert timedelta to HH:MM
+            else:
+                total_hours = "0:00"  # No check-in or check-out
+
+            attendance_data.append({
+                "date": record.date.strftime("%d-%m-%Y"),
+                "check_in": record.check_in.strftime("%I:%M%p") if record.check_in else "-",
+                "check_out": record.check_out.strftime("%I:%M%p") if record.check_out else "-",
+                "overtime": f"{record.overtime_hours} hrs" if hasattr(record, "overtime_hours") and record.overtime_hours else "-",
+                "status": record.status.capitalize(),
+                "total_hours": total_hours,  # ✅ Fixed working hours calculation
+            })
+
+            # ✅ Update attendance summary
+            if status_key in attendance_summary:
+                attendance_summary[status_key] += 1
+            attendance_summary["total"] += 1
+
+        return Response({
+            "employee_details": emp_details,
+            "unpaid_leaves": unpaid_leaves,
+            "total_overtime": total_overtime,
+            "attendance_records": attendance_data,
+            "attendance_summary": attendance_summary,  # For graphical statistics
+        }, status=status.HTTP_200_OK)

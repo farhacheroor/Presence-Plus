@@ -34,7 +34,7 @@ class LeaveRequestHistorySerializer(serializers.ModelSerializer):
     leave_type = serializers.CharField(source="leave_policy.leave_type", read_only=True)
     class Meta:
         model = LeaveRequest
-        fields = ["employee_name", "start_date", "end_date", "reason", "leave_type"]  # Make sure all fields are included
+        fields = ["employee_name", "start_date", "end_date", "reason", "leave_type", "status"]  # Make sure all fields are included
         # OR explicitly list the fields you want
 
 class LeavePolicySerializer(serializers.ModelSerializer):
