@@ -158,7 +158,7 @@ class LoginView(APIView):
             return Response({"error": "Invalid role"}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({
-            "access": str(refresh.access_token),  # ✅ Fix key from 'token' to 'access'
+            "access": str(refresh.access_token),  #  Fix key from 'token' to 'access'
             "refresh": str(refresh),
             "role": user.role,
             "redirect_url": dashboard_url,
@@ -428,130 +428,6 @@ class LeaveRequestListView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# ###############     leave approve or reject #################
-
-# class ManageLeaveRequestView(APIView):
-#     authentication_classes = [JWTAuthentication]
-#     permission_classes = [permissions.IsAuthenticated]  # Ensure only logged-in users can access
-
-#     def post(self, request, leave_id):
-#         try:
-#             # Fetch the leave request (404 if not found)
-#             leave_request = get_object_or_404(LeaveRequest, id=leave_id)
-
-#             # Ensure only HR/Admin can approve/reject
-#             if request.user.role.lower() not in ["hr", "admin"]:
-#                 return Response({"error": "Permission denied"}, status=status.HTTP_403_FORBIDDEN)
-
-#             action = request.data.get("action")  # Expected: "approve" or "reject"
-
-#             # Validate action
-#             if action not in ["approve", "reject"]:
-#                 return Response({"error": "Invalid action. Use 'approve' or 'reject'."}, status=status.HTTP_400_BAD_REQUEST)
-
-#             # Prevent modifying an already processed request
-#             if leave_request.status in ["approved", "rejected"]:
-#                 return Response({"error": f"Leave request is already {leave_request.status}"}, status=status.HTTP_400_BAD_REQUEST)
-
-#             # Update status based on action
-#             leave_request.status = "approved" if action == "approve" else "rejected"
-#             leave_request.save()
-
-#             return Response({"message": f"Leave request {action}d successfully!"}, status=status.HTTP_200_OK)
-
-#         except Exception as e:
-#             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-# ###########     leave cancellation approve/ reject  #####################
-
-# class ManageCancellationRequestView(APIView):
-#     authentication_classes = [JWTAuthentication]
-#     permission_classes = [IsAuthenticated]  # Only admins can approve/reject
-
-#     def post(self, request, leave_id):
-#         try:
-#             leave_request = LeaveRequest.objects.get(id=leave_id)
-
-#             if not leave_request.cancellation_request:
-#                 return Response({"error": "No cancellation request for this leave"}, status=status.HTTP_400_BAD_REQUEST)
-
-#             action = request.data.get("action")  # "approve" or "reject"
-
-#             if action == "approve":
-#                 leave_request.status = "cancelled"
-#                 leave_request.cancellation_request = False
-#             elif action == "reject":
-#                 leave_request.cancellation_request = False  # Reset request
-#             else:
-#                 return Response({"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST)
-
-#             leave_request.save()
-#             return Response({"message": f"Cancellation request {action}d successfully"}, status=status.HTTP_200_OK)
-
-#         except LeaveRequest.DoesNotExist:
-#             return Response({"error": "Leave request not found"}, status=status.HTTP_404_NOT_FOUND)
-
-#################       attendance report generator ########################
-
-# class AttendanceReportView(APIView):
-#     authentication_classes = [JWTAuthentication]  
-#     permission_classes = [IsAuthenticated]
-
-#     def get(self, request, format=None):
-#         report_format = request.GET.get("format", "json")  # Default to JSON
-#         start_date = request.GET.get("start_date")
-#         end_date = request.GET.get("end_date")
-#         #department = request.GET.get("department")
-
-#         start_date = parse_date(start_date) if start_date else None
-#         end_date = parse_date(end_date) if end_date else None
-
-#         employees = Employee.objects.all()
-
-#         # if department:
-#         #     employees = employees.filter(user__department=department)
-
-#         report_data = []
-#         for emp in employees:
-#             attendance_qs = Attendance.objects.filter(employee=emp)
-
-#             if start_date and end_date:
-#                 attendance_qs = attendance_qs.filter(date__range=[start_date, end_date])
-
-#             # Ensuring attendance records exist before processing
-#             if not attendance_qs.exists():
-#                 continue  # Skip employees with no attendance data
-
-#             total_working_days = attendance_qs.count()
-#             overtime = attendance_qs.filter(overtime=True).count()
-#             leave_days = attendance_qs.filter(status="leave").count()
-
-#             report_data.append({
-#                 "Employee Name": emp.name,
-#                 "Employee ID": emp.emp_num,
-#                 "Department": emp.user.department if emp.user else "N/A",
-#                 "Total Working Days": total_working_days,
-#                 "Overtime Hours": overtime,
-#                 "Leaves Taken": leave_days,
-#             })
-
-#         if not report_data:
-#             return Response(
-#                 {"message": "No attendance records found for the selected filters"},
-#                 status=status.HTTP_200_OK,
-#             )
-
-#         if report_format == "excel":
-#             return self.generate_excel(report_data)
-#         return Response(report_data, status=status.HTTP_200_OK)
-
-#     def generate_excel(self, data):
-#         df = pd.DataFrame(data)
-#         response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-#         response["Content-Disposition"] = 'attachment; filename="attendance_report.xl"'
-#         df.to_excel(response, index=False)
-#         return response
-
 #################  leave policy creation #############
 
 class LeavePolicyCreateView(viewsets.ModelViewSet):
@@ -694,7 +570,7 @@ class LogoutView(APIView):
             refresh_token = request.data.get("refresh")
             if refresh_token:
                 token = RefreshToken(refresh_token)
-                token.blacklist()  # ✅ Blacklist the token to invalidate it
+                token.blacklist()  #  Blacklist the token to invalidate it
                 return Response({"message": "Successfully logged out"}, status=200)
             return Response({"error": "Refresh token is required"}, status=400)
         except Exception as e:
@@ -732,7 +608,7 @@ class EmployeeDashboardView(APIView):
         present_days = Attendance.objects.filter(employee=employee, date__gte=first_day_of_month, status="present").count()
         attendance_percentage = round((present_days / total_working_days * 100), 2) if total_working_days else 0
 
-        # ✅ Fetch daily attendance for graphical representation
+        #  Fetch daily attendance for graphical representation
         attendance_graph_data = []
         for day in range(1, today.day + 1):
             date_obj = first_day_of_month.replace(day=day)
@@ -749,12 +625,12 @@ class EmployeeDashboardView(APIView):
             "attendance_percentage": attendance_percentage,
             # "shift": shift,
             "date": today.strftime("%d %b"),
-            "attendance_graph_data": attendance_graph_data  # ✅ Graph Data
+            "attendance_graph_data": attendance_graph_data  # Graph Data
         })
 
 #################   employee leave request and history view ##########################
 
-logger = logging.getLogger(__name__)  # ✅ Proper Logging Setup
+logger = logging.getLogger(__name__)  #  Proper Logging Setup
 
 class LeaveRequestView(APIView):
     authentication_classes = [JWTAuthentication]
@@ -786,7 +662,7 @@ class LeaveRequestView(APIView):
             if start_date > end_date:
                 return Response({"error": "start_date cannot be after end_date!"}, status=status.HTTP_400_BAD_REQUEST)
 
-            # ✅ Check if employee already has a leave request on this date
+            # Check if employee already has a leave request on this date
             overlapping_requests = LeaveRequest.objects.filter(
                 employee=employee,
                 start_date__lte=end_date,
@@ -796,11 +672,11 @@ class LeaveRequestView(APIView):
             if overlapping_requests:
                 return Response({"error": "You already have a leave request for this date range!"}, status=status.HTTP_400_BAD_REQUEST)
 
-            # ✅ Fetch Leave Policy (Instead of LeaveType)
+            # Fetch Leave Policy (Instead of LeaveType)
             leave_policy = get_object_or_404(LeavePolicy, id=leave_type_id)
-            leave_type = leave_policy.leave_type  # ✅ Extract the leave type
+            leave_type = leave_policy.leave_type  #  Extract the leave type
 
-            # ✅ Fetch Leave Balance
+            #  Fetch Leave Balance
             leave_balance = LeaveBalance.objects.filter(employee=employee, leave_policy=leave_policy).first()
             if not leave_balance:
                 return Response({"error": "Leave balance not found!"}, status=status.HTTP_404_NOT_FOUND)
@@ -811,7 +687,7 @@ class LeaveRequestView(APIView):
             if requested_days > available_days:
                 return Response({"error": "Insufficient leave balance!"}, status=status.HTTP_400_BAD_REQUEST)
 
-            # ✅ Create Leave Request
+            #  Create Leave Request
             leave_request = LeaveRequest.objects.create(
                 employee=employee,
                 start_date=start_date,
@@ -822,11 +698,11 @@ class LeaveRequestView(APIView):
                 image=image,
             )
 
-            # ✅ Update Leave Balance
+            #  Update Leave Balance
             leave_balance.used += requested_days
             leave_balance.save()
 
-            # ✅ Create Leave Transaction
+            #  Create Leave Transaction
             LeaveTransaction.objects.create(
                 employee=employee,
                 transaction_type="Leave Request",
@@ -889,18 +765,18 @@ class LeaveTypeListView(APIView):
             employee = Employee.objects.get(user=request.user)
             logger.info(f"Authenticated Employee: {employee}")
 
-            # ✅ Fetch leave balances
+            #  Fetch leave balances
             leave_balances = LeaveBalance.objects.filter(employee=employee).annotate(
                 balance=F("total") - F("used")
             ).filter(balance__gt=0)
 
             logger.info(f"Leave Balances Retrieved: {list(leave_balances.values('id', 'total', 'used', 'balance'))}")
 
-            # ✅ Extract leave policies
+            # Extract leave policies
             leave_policies = [lb.leave_policy for lb in leave_balances if lb.balance > 0]
             logger.info(f"Leave Policies Extracted: {leave_policies}")
 
-            # ✅ Prepare response data
+            #  Prepare response data
             data = [{"id": lp.id, "name": lp.leave_type} for lp in leave_policies]
             logger.info(f"Response Data: {data}")
 
@@ -923,34 +799,34 @@ class LeaveBalanceSummaryView(APIView):
         try:
             employee = request.user.employee
 
-            # ✅ Fetch leave balances correctly
+            #  Fetch leave balances correctly
             leave_balances = LeaveBalance.objects.filter(employee=employee)
 
-            # ✅ Get the total leave from LeaveBalance table
+            #  Get the total leave from LeaveBalance table
             total_leave = sum(lb.total for lb in leave_balances)
             available_leave = sum(lb.total - lb.used for lb in leave_balances)  
 
-            # ✅ Fetch approved, pending, rejected, and canceled leave requests
+            # Fetch approved, pending, rejected, and canceled leave requests
             approved_leaves = LeaveRequest.objects.filter(employee=employee, status="Approved")
             #pending_leaves = LeaveRequest.objects.filter(employee=employee, status="Pending")
             rejected_leaves = LeaveRequest.objects.filter(employee=employee, status="Rejected")
             canceled_leaves = LeaveRequest.objects.filter(employee=employee, status="Cancelled")
 
-            # ✅ Sum leave days correctly
+            #  Sum leave days correctly
             approved_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in approved_leaves)
             #pending_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in pending_leaves)
             refunded_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in canceled_leaves)
             rejected_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in rejected_leaves)  
 
-            # ✅ Ensure available leave is adjusted when rejected leaves are added back
+            #  Ensure available leave is adjusted when rejected leaves are added back
             adjusted_available_leave = available_leave + rejected_leave_days  
 
-            # ✅ Fix: Calculate used leave based on approved leave requests instead of LeaveBalance
+            # Fix: Calculate used leave based on approved leave requests instead of LeaveBalance
             used_leave = approved_leave_days  
 
             data = {
                 "total_leave": total_leave,
-                "used_leave": used_leave,  # ✅ Now fetched from approved leaves
+                "used_leave": used_leave,  #  Now fetched from approved leaves
                 #"pending_leave": pending_leave_days,
                 "refunded_leave": refunded_leave_days,
                 "rejected_leave": rejected_leave_days,
@@ -1023,7 +899,7 @@ class LeaveCancellationApprovalView(APIView):
 
         decision = request.data.get("decision")  # Accept or Reject
 
-        # ✅ Add this validation
+        # Add this validation
         if not decision:
             return Response({"error": "Missing 'decision' in request body!"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1042,8 +918,8 @@ class LeaveCancellationApprovalView(APIView):
             requested_days = (leave_request.end_date - leave_request.start_date).days + 1
             leave_balance = LeaveBalance.objects.filter(employee=leave_request.employee).first()
             if leave_balance:
-                leave_balance.total += requested_days  # ✅ Increase total leave
-                leave_balance.used -= requested_days  # ✅ Reduce used leave (if applicable)
+                leave_balance.total += requested_days  # Increase total leave
+                leave_balance.used -= requested_days  #  Reduce used leave 
                 leave_balance.save()
 
             # Update transaction as completed
@@ -1052,7 +928,7 @@ class LeaveCancellationApprovalView(APIView):
                 transaction_type="Leave Cancellation Approved",
                 date=date.today(),
                 credit=requested_days,
-                leave_policy=leave_request.leave_policy  # ✅ Fix: Add leave policy
+                leave_policy=leave_request.leave_policy  
             )
 
             return Response({"message": "Leave cancellation approved successfully!"}, status=status.HTTP_200_OK)
@@ -1068,7 +944,7 @@ class LeaveCancellationApprovalView(APIView):
                 transaction_type="Leave Cancellation Rejected",
                 date=date.today(),
                 pending=False,
-                leave_policy=leave_request.leave_policy  # ✅ Fix: Add leave policy
+                leave_policy=leave_request.leave_policy  
             )
 
             return Response({"message": "Leave cancellation rejected!"}, status=status.HTTP_200_OK)
@@ -1089,7 +965,7 @@ class OvertimeStatsView(APIView):
         # Group by month and calculate total overtime hours per month
         overtime_data = (
             Overtime.objects.filter(employee=employee, status="completed")
-            .annotate(month=TruncMonth("date"))  # ✅ Fix: TruncMonth now works
+            .annotate(month=TruncMonth("date"))  
             .values("month")
             .annotate(total_hours=Sum("hours"))
             .order_by("month")
@@ -1154,7 +1030,7 @@ class OvertimeAssignmentView(APIView):
                     # If overtime date has passed and was not completed, it's missed
                         overtime.status = "missed"
 
-                    overtime.save()  # ✅ Save the updated status
+                    overtime.save() 
 
             # Retrieve updated overtime records
             upcoming_overtime = list(Overtime.objects.filter(employee=employee, status="upcoming").values("date", "hours", "reason"))
@@ -1300,12 +1176,12 @@ class AttendanceRequestView(generics.ListCreateAPIView):
     serializer_class = AttendanceRequestSerializer
 
     def get_queryset(self):
-        return AttendanceRequest.objects.filter(employee=self.request.user.employee)  # ✅ Get employee's records
+        return AttendanceRequest.objects.filter(employee=self.request.user.employee)  
 
     def perform_create(self, serializer):
         """Ensure employee is correctly assigned and date is set to today"""
-        employee = self.request.user.employee  # ✅ Get the Employee instance
-        today = date.today()  # ✅ Get today's date
+        employee = self.request.user.employee  
+        today = date.today()  
         serializer.save(employee=employee, date=today)
 
 class AttendanceRequestApprovalView(APIView):
@@ -1342,12 +1218,6 @@ class WorkingHoursViewSet(viewsets.ModelViewSet):
     serializer_class = WorkingHoursSerializer
     permission_classes = [permissions.IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-
-# class ShiftRosterViewSet(viewsets.ModelViewSet):
-#     queryset = ShiftRoster.objects.all()
-#     # serializer_class = ShiftRosterSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-#     authentication_classes = [JWTAuthentication]
 
 class EmployeeViewSet(viewsets.ModelViewSet):
     queryset = Employee.objects.all()
@@ -1434,8 +1304,8 @@ class ShiftRosterView(APIView):
 ############    employee profile    ##################################
 
 class EmployeeProfileView(APIView):
-    authentication_classes = [JWTAuthentication]  # ✅ Enforce JWT authentication
-    permission_classes = [IsAuthenticated]  # ✅ Ensure only authenticated users can access
+    authentication_classes = [JWTAuthentication]  
+    permission_classes = [IsAuthenticated]  
 
     def get(self, request):
         print("Authenticated user:", request.user)  # Debugging
@@ -1466,7 +1336,7 @@ class EmployeeProfileView(APIView):
 
             return Response({
                 "message": "Profile updated successfully",
-                "profile_image": request.build_absolute_uri(employee.image.url) if employee.image else None # ✅ Return full image URL
+                "profile_image": request.build_absolute_uri(employee.image.url) if employee.image else None
             })
 
         return Response({"error": "Only profile image can be updated"}, status=400)
@@ -1483,15 +1353,12 @@ class ChangePasswordView(APIView):
         new_password = request.data.get("new_password")
         confirm_password = request.data.get("confirm_password")
 
-        # ✅ Validate Current Password
         if not check_password(current_password, user.password):
             return Response({"error": "Current password is incorrect"}, status=400)
 
-        # ✅ Check if New Passwords Match
         if new_password != confirm_password:
             return Response({"error": "New passwords do not match"}, status=400)
 
-        # ✅ Password Strength Validation
         if not self.validate_password_strength(new_password):
             return Response(
                 {
@@ -1499,7 +1366,6 @@ class ChangePasswordView(APIView):
                     status=400
                 )
 
-        # ✅ Set New Password
         user.set_password(new_password)
         user.save()
 
@@ -1535,7 +1401,6 @@ class EmployeeLeaveBalanceView(APIView):
             # Handle unlimited/unpaid leave
             total_display = "∞" if total == float("inf") else total
 
-            # ✅ Fetch leave requests with proper filtering
             leave_requests = LeaveRequest.objects.filter(
                 employee=employee,
                 leave_policy=leave_policy,
@@ -1543,7 +1408,6 @@ class EmployeeLeaveBalanceView(APIView):
                 cancellation_request=False
             )
 
-            # ✅ Debugging: Print retrieved leave requests
             print(f"\nLeave Type: {leave_type}")
             print(f"Total Leaves Found: {leave_requests.count()}")
 
@@ -1594,59 +1458,6 @@ class PolicyListView(APIView):
         }, status=200)
 
 ################    HR dashboard    ###############
-
-# class HRDashboardView(APIView):
-#     authentication_classes = [JWTAuthentication]
-#     permission_classes = [IsAuthenticated]
-
-#     def get(self, request):
-#         today = now().date()
-
-#         # Total employees
-#         total_employees = Employee.objects.filter(Q(user__role="Employee") | Q(user__role="employee"))
-#         serialized_employees = EmployeeSerializers(total_employees, many=True).data
-
-#         # Employees on leave today
-#         on_leave_today = LeaveRequest.objects.filter(
-#             start_date__lte=today, end_date__gte=today, status="approved"
-#         ).count()
-
-#         # Pending leave requests
-#         pending_leave_requests = LeaveRequest.objects.filter(status__iexact="pending").count()
-
-#         # Attendance requests pending approval
-#         attendance_requests = AttendanceRequest.objects.filter(status__iexact="pending").count()
-
-#         # Leave cancellations requested
-#         leave_cancellations = LeaveRequest.objects.filter(status__iexact="Cancellation Pending").count()
-
-#         # Attendance statistics for the particular day
-#         present_today = Attendance.objects.filter(date=today, status="present").count()
-#         absent_today = Attendance.objects.filter(date=today, status="absent").count()
-#         late_today = Attendance.objects.filter(date=today, status="late").count()
-
-#         # Get check-in and check-out times for present employees
-#         present_attendance = Attendance.objects.filter(date=today, status="present").select_related("employee")
-
-#         attendance_data = []
-#         for record in present_attendance:
-#             attendance_data.append({
-#                 "employee": record.employee.user.username,  # Adjust based on your User model
-#                 "check_in": record.check_in.strftime("%H:%M:%S") if record.check_in else "N/A",
-#                 "check_out": record.check_out.strftime("%H:%M:%S") if record.check_out else "N/A",
-#             })
-
-#         return Response({
-#             "total_employees": serialized_employees,
-#             "on_leave_today": on_leave_today,
-#             "leave_requests": pending_leave_requests,  # Changed from pending_leave_requests
-#             "attendance_request": attendance_requests, # Changed to match frontend
-#             "leave_cancellations": leave_cancellations,
-#             "present": present_today,  # Flattened from attendance_statistics
-#             "absent": absent_today,    # Flattened from attendance_statistics
-#             "late": late_today,        # Flattened from attendance_statistics
-#             "attendance_data": attendance_data  # Added check-in & check-out times
-#         }, status=200)
 
 class HRDashboardView(APIView):
     authentication_classes = [JWTAuthentication]
@@ -1933,27 +1744,26 @@ class LeaveHistoryView(APIView):
 
     def get(self, request):
         try:
-            user = request.user  # ✅ Get the authenticated user
-            user_role = user.role.lower()  # ✅ Fetch role from User model (convert to lowercase)
+            user = request.user  
+            user_role = user.role.lower()  
 
             if user_role == "hr":
                 # HR can view employees' leave history
                 leave_history = LeaveRequest.objects.filter(
-                    employee__user__role="employee",  # ✅ Ensure this matches actual stored role
+                    employee__user__role="employee",  
                     status__in=["Approved", "Cancel Rejected"]
                 ).order_by("-start_date")
 
             elif user_role == "admin":
                 # Admin can view HRs' leave history
                 leave_history = LeaveRequest.objects.filter(
-                    employee__user__role="hr",  # ✅ Ensure this matches actual stored role
+                    employee__user__role="hr",  
                     status__in=["Approved", "Cancel Rejected"]
                 ).order_by("-start_date")
 
             else:
                 return Response({"error": "Unauthorized access"}, status=403)
 
-            # ✅ Serialize the response
             serializer = LeaveRequestHistorySerializer(leave_history, many=True)
             return Response(serializer.data, status=200)
 
@@ -2093,24 +1903,6 @@ class WorkingHoursListCreateView(APIView):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-# class ShiftRosterListCreateView(APIView):
-#     permission_classes = [IsAuthenticated]
-#     authentication_classes = [JWTAuthentication]
-
-#     def get(self, request):
-#         """List all shift rosters."""
-#         rosters = ShiftRoster.objects.all()
-#         serializer = ShiftRosterSerializer(rosters, many=True)
-#         return Response(serializer.data, status=status.HTTP_200_OK)
-
-#     def post(self, request):
-#         """Create a new shift roster."""
-#         serializer = ShiftRosterSerializer(data=request.data)
-#         if serializer.is_valid():
-#             serializer.save()
-#             return Response(serializer.data, status=status.HTTP_201_CREATED)
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class AssignShiftView(APIView):
     permission_classes = [IsAuthenticated]
@@ -2509,13 +2301,12 @@ class EmployeeOvertimeDetailView(APIView):
 
     def get(self, request, employee_id):
         try:
-            # ✅ Fetch employee details
+        
             employee = get_object_or_404(
                 Employee.objects.select_related("designation", "user"),
                 id=employee_id
             )
 
-            # ✅ Fetch only completed overtime records
             completed_overtime_records = Overtime.objects.filter(
                 employee=employee
             ).order_by('-date')
@@ -2524,22 +2315,20 @@ class EmployeeOvertimeDetailView(APIView):
             total_overtime = 0
 
             for overtime in completed_overtime_records:
-                # ✅ Fetch the corresponding attendance record for the same date
+
                 attendance_record = Attendance.objects.filter(
                     employee=employee, date=overtime.date
                 ).first()
 
                 if attendance_record and attendance_record.check_out:
-                    # ✅ Convert check-in and check-out to datetime for calculation
+                    
                     assigned_hours = overtime.hours
                     actual_worked_seconds = (datetime.combine(overtime.date, attendance_record.check_out) -
                                              datetime.combine(overtime.date, attendance_record.check_in)).seconds
                     actual_worked_hours = actual_worked_seconds / 3600
 
-                    # ✅ Determine overtime status
                     overtime_status = "Completed" if actual_worked_hours >= assigned_hours else "Incomplete"
 
-                    # ✅ Store only completed overtime in response
                     if overtime_status == "Completed":
                         total_overtime += assigned_hours
                         filtered_overtime.append({
@@ -2566,21 +2355,20 @@ class FirstAssignOvertimeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        # ✅ Extract Data from Request
+        
         data = request.data
         employee_id = data.get("employee_id")
         date_str = data.get("date")
         hours = data.get("hours")
         reason = data.get("reason", "").strip()  # Get reason with empty string as default
 
-        # ✅ Validate Data
+        
         if not employee_id or not date_str or not hours:
             return Response({"error": "Employee ID, date, and hours are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             overtime_date = datetime.strptime(date_str, "%Y-%m-%d").date()
 
-            # ✅ Ensure overtime can ONLY be assigned for the future
             today = date.today()
             if overtime_date <= today:  # Blocks past and present dates
                 return Response({"error": "Overtime can only be assigned for future dates."}, status=400)
@@ -2588,17 +2376,14 @@ class FirstAssignOvertimeView(APIView):
         except ValueError:
             return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Get Employee Instance
         employee = get_object_or_404(Employee, id=employee_id)
 
-        # ✅ Check for existing overtime on the same future date
         if Overtime.objects.filter(employee=employee, date=overtime_date).exists():
             return Response(
                 {"error": f"Overtime already exists for {employee.name} on {date_str}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ✅ Validate hours
         try:
             hours = float(hours)
             if hours <= 0:
@@ -2608,11 +2393,9 @@ class FirstAssignOvertimeView(APIView):
         except ValueError:
             return Response({"error": "Invalid hours value."}, status=400)
 
-        # ✅ Ensure reason is provided
         if not reason:
             return Response({"error": "Reason for overtime is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Create Overtime Entry
         overtime = Overtime.objects.create(
             employee=employee,
             date=overtime_date,
@@ -2751,7 +2534,7 @@ class HRAttendanceRequestView(APIView):
                     "date": req.date.strftime('%Y-%m-%d'),
                     "check_in": req.check_in.strftime('%H:%M') if req.check_in else None,
                     "check_out": req.check_out.strftime('%H:%M') if req.check_out else None,
-                    "image": request.build_absolute_uri(req.image.url) if req.image else None,  # ✅ Fixed image field
+                    "image": request.build_absolute_uri(req.image.url) if req.image else None,  
                 })
 
             return Response({"pending_attendance_requests": requests_data}, status=status.HTTP_200_OK)
@@ -2899,7 +2682,7 @@ class GenerateReportView(APIView):
         # Save workbook to response
         wb.save(response)
         
-        return response  # ✅ Make sure response is returned
+        return response  
 
 
 from datetime import datetime, timedelta
@@ -2909,10 +2692,9 @@ class EmployeeAttendanceDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, employee_id):
-        # ✅ Fetch employee details
+    
         employee = get_object_or_404(Employee, id=employee_id)
 
-        # ✅ Fetch employee number, designation, department
         emp_details = {
             "name": employee.name,
             "designation": getattr(employee.designation, "desig_name", "N/A"),
@@ -2920,16 +2702,16 @@ class EmployeeAttendanceDetailView(APIView):
             "emp_num": employee.emp_num,
         }
 
-        # ✅ Fetch unpaid leave count
+        #  Fetch unpaid leave count
         unpaid_leaves = LeaveBalance.objects.filter(employee=employee, leave_policy__leave_type="unpaid").count()
 
-        # ✅ Fetch total overtime
+        #  Fetch total overtime
         total_overtime = (
             Overtime.objects.filter(employee=employee)
             .aggregate(Sum('hours'))['hours__sum'] or 0
         )
 
-        # ✅ Fetch attendance history
+        # Fetch attendance history
         attendance_records = Attendance.objects.filter(employee=employee).order_by('-date')
 
         attendance_data = []
@@ -2938,7 +2720,7 @@ class EmployeeAttendanceDetailView(APIView):
         for record in attendance_records:
             status_key = record.status.lower()
 
-            # ✅ Convert time to datetime for subtraction
+            # Convert time to datetime for subtraction
             if record.check_in and record.check_out:
                 check_in_dt = datetime.combine(record.date, record.check_in)
                 check_out_dt = datetime.combine(record.date, record.check_out)
@@ -2953,10 +2735,10 @@ class EmployeeAttendanceDetailView(APIView):
                 "check_out": record.check_out.strftime("%I:%M%p") if record.check_out else "-",
                 "overtime": f"{record.overtime_hours} hrs" if hasattr(record, "overtime_hours") and record.overtime_hours else "-",
                 "status": record.status.capitalize(),
-                "total_hours": total_hours,  # ✅ Fixed working hours calculation
+                "total_hours": total_hours,  # Fixed working hours calculation
             })
 
-            # ✅ Update attendance summary
+            # Update attendance summary
             if status_key in attendance_summary:
                 attendance_summary[status_key] += 1
             attendance_summary["total"] += 1
@@ -2983,23 +2765,23 @@ class AddAttendanceRecordView(APIView):
             if not date_str or not check_in_str or not check_out_str:
                 return Response({"error": "Missing required fields (date, check_in, check_out)"}, status=400)
 
-            # ✅ Convert date & time to datetime objects
+            # Convert date & time to datetime objects
             attendance_date = datetime.strptime(date_str, "%Y-%m-%d").date()
             check_in = datetime.strptime(check_in_str, "%H:%M").time()
             check_out = datetime.strptime(check_out_str, "%H:%M").time()
 
-            # ✅ Validate check-in and check-out order
+            # Validate check-in and check-out order
             if check_out <= check_in:
                 return Response({"error": "Check-out time must be later than check-in time"}, status=400)
 
-            # ✅ Fetch employee based on URL parameter
+            # Fetch employee based on URL parameter
             employee = get_object_or_404(Employee, id=employee_id)
 
-            # ✅ Calculate worked hours
+            # Calculate worked hours
             worked_seconds = (datetime.combine(attendance_date, check_out) - datetime.combine(attendance_date, check_in)).seconds
             worked_hours = round(worked_seconds / 3600, 2)  # Convert seconds to hours
 
-            # ✅ Create attendance record
+            # Create attendance record
             attendance = Attendance.objects.create(
                 employee=employee,
                 date=attendance_date,
@@ -3022,10 +2804,10 @@ class EmployeeAttendanceDashDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # ✅ Fetch the logged-in employee
+        # Fetch the logged-in employee
         employee = get_object_or_404(Employee, user=request.user)
 
-        # ✅ Fetch employee number, designation, department
+        # Fetch employee number, designation, department
         emp_details = {
             "name": employee.name,
             "designation": getattr(employee.designation, "desig_name", "N/A"),
@@ -3033,16 +2815,16 @@ class EmployeeAttendanceDashDetailView(APIView):
             "emp_num": employee.emp_num,
         }
 
-        # ✅ Fetch unpaid leave count
+        # Fetch unpaid leave count
         unpaid_leaves = LeaveBalance.objects.filter(employee=employee, leave_policy__leave_type="unpaid").count()
 
-        # ✅ Fetch total overtime
+        # Fetch total overtime
         total_overtime = (
             Overtime.objects.filter(employee=employee)
             .aggregate(Sum('hours'))['hours__sum'] or 0
         )
 
-        # ✅ Fetch attendance history of the logged-in employee
+        # Fetch attendance history of the logged-in employee
         attendance_records = Attendance.objects.filter(employee=employee).order_by('-date')
 
         attendance_data = []
@@ -3051,7 +2833,7 @@ class EmployeeAttendanceDashDetailView(APIView):
         for record in attendance_records:
             status_key = record.status.lower()
 
-            # ✅ Convert time to datetime for subtraction
+            #Convert time to datetime for subtraction
             if record.check_in and record.check_out:
                 check_in_dt = datetime.combine(record.date, record.check_in)
                 check_out_dt = datetime.combine(record.date, record.check_out)
@@ -3066,10 +2848,10 @@ class EmployeeAttendanceDashDetailView(APIView):
                 "check_out": record.check_out.strftime("%I:%M%p") if record.check_out else "-",
                 "overtime": f"{record.overtime_hours} hrs" if hasattr(record, "overtime_hours") and record.overtime_hours else "-",
                 "status": record.status.capitalize(),
-                "total_hours": total_hours,  # ✅ Fixed working hours calculation
+                "total_hours": total_hours,  #Fixed working hours calculation
             })
 
-            # ✅ Update attendance summary
+            #Update attendance summary
             if status_key in attendance_summary:
                 attendance_summary[status_key] += 1
             attendance_summary["total"] += 1
