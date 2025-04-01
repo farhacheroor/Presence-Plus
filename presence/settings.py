@@ -55,7 +55,7 @@ INSTALLED_APPS = [
 ]
 
 AUTHENTICATION_BACKENDS = [
-    "django.contrib.auth.backends.ModelBackend",  # ✅ Ensure this is enabled
+    "django.contrib.auth.backends.ModelBackend", 
 ]
 
 MIDDLEWARE = [
@@ -96,8 +96,9 @@ WSGI_APPLICATION = 'presence.wsgi.application'
 MIDDLEWARE.insert(0, 'corsheaders.middleware.CorsMiddleware')
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5000",  # Allow requests from your React frontend
-    "http://192.168.251.51:8000",  # If needed, allow your backend IP
+    "http://localhost:5000", 
+    "http://192.168.251.51:8000", 
+    "https://presence-nu.vercel.app",
 ]
 
 CORS_ALLOW_CREDENTIALS = True 
@@ -195,7 +196,7 @@ CELERY_BROKER_URL = "redis://localhost:6379/0"  # Redis as broker
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_BACKEND = "redis://localhost:6379/0"  # Store task results in Redis
-CELERY_TIMEZONE = "UTC"  # Change if needed
+CELERY_TIMEZONE = "UTC" 
 CELERY_ENABLE_UTC = True
 
 # Ensure retries on startup (Fixes Celery 6.0+ warning)
@@ -203,7 +204,7 @@ CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 
 # Custom User Model
-AUTH_USER_MODEL = "presence_plus.User"  # Change "your_app" to the actual app name
+AUTH_USER_MODEL = "presence_plus.User" 
 
 # Django REST Framework Authentication
 REST_FRAMEWORK = {
@@ -224,12 +225,12 @@ REST_FRAMEWORK = {
 from datetime import timedelta
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(days=5),  # Token expires in 1 day
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),  # Refresh token expires in 7 days
+    "ACCESS_TOKEN_LIFETIME": timedelta(days=5), 
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),  
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "ALGORITHM": "HS256",
-    "SIGNING_KEY": SECRET_KEY,  # Uses Django's secret key
+    "SIGNING_KEY": SECRET_KEY, 
     "AUTH_HEADER_TYPES": ("Bearer",),
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
@@ -237,13 +238,13 @@ SIMPLE_JWT = {
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))  # Default to 587 if not set
-EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'  # Defaults to True
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587)) 
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'presenceplussoftware@gmail.com')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', 'baim kpea oaic iwun')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL' , 'EMAIL_HOST_USER')
 
-print("EMAIL_HOST:", os.getenv('EMAIL_HOST'))  # Should output 'smtp.gmail.com'
+print("EMAIL_HOST:", os.getenv('EMAIL_HOST')) 
 print("EMAIL_HOST_USER:", os.getenv('EMAIL_HOST_USER'))
 
 REST_FRAMEWORK = {
@@ -264,24 +265,6 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # Add this in production to serve media files
 if not DEBUG:
     STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
-# LOGGING = {
-#     'version': 1,
-#     'disable_existing_loggers': False,
-#     'handlers': {
-#         'file': {
-#             'level': 'DEBUG',  # Change to DEBUG if needed
-#             'class': 'logging.FileHandler',
-#             'filename': 'debug.log',
-#         },
-#     },
-#     'loggers': {
-#         'django': {
-#             'handlers': ['file'],
-#             'level': 'DEBUG',
-#             'propagate': True,
-#         },
-#     },
-# }
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [],
