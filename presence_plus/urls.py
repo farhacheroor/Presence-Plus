@@ -12,12 +12,6 @@ router.register(r'leave-policy-update',LeavePolicyDetailView, basename='leave-up
 router.register(r'work-time-view',WorkTimePolicyDetailView, basename='work-time-view')
 router.register(r'work-time-policies',WorkTimePolicyCreateListView, basename='work-time-policies')
 
-
-# router.register(r'working-hours', WorkingHoursViewSet)
-# router.register(r'shift-rosters', ShiftRosterViewSet)
-# router.register(r'employees', EmployeeViewSet)
-#router.register(r'employee-shifts', EmployeeShiftAssignmentViewSet)
-
 urlpatterns = [
     path('login/', LoginView.as_view(), name='login'),
     path("token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
@@ -31,22 +25,17 @@ urlpatterns = [
     path('admincount/',DashboardCountsView.as_view(), name='admincount'),
     path('admstat/',AttendanceStatsView.as_view(), name='admstat'),
     path("leave-requests/", LeaveRequestListView.as_view(), name="leave-requests"),
-    # path("leave-requests/<int:leave_id>/", ManageLeaveRequestView.as_view(), name="manage-leave"),
-    # path("leave-requests/<int:leave_id>/cancel/", ManageCancellationRequestView.as_view(), name="cancel-leave"),
     path("leavecancellationview/",PendingLeaveCancellationRequestsView.as_view(), name='leavecancellationview'),
-    # path('attendance-report/', AttendanceReportView.as_view(), name='attendance-report'),
     path("policyleavetype/",LeaveTypeCreateView.as_view(), name="policyleavetype"),
     path("public-holidays/", PublicHolidayView.as_view(), name="public-holidays"),
     path('', include(router.urls)),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("hrleavecancel/<int:leave_id>/", LeaveCancellationApprovalView.as_view(), name="hrleavecancel"),
-    #path("hrshift/", AssignEmployeeShiftView.as_view(), name="hrshift"),
     path("hrdashboard/",HRDashboardView.as_view(), name="hrdashboard"),
     path("hrempview/",EmployeeDetailView.as_view(),name="hrempview"),
     path("hrmanualattend/",ManualAttendanceView.as_view(), name="hrmanualattend"),
     path("employee/<int:employee_id>/leave-balance/", EmployeeLeaveBalanceView.as_view(),name="employee-leave-balance"),
     path("hrleaverequestview/",PendingLeaveRequestsView.as_view(), name="hrleaverequestview"),
-    #path("request-leave/", LeaveRequestCreateView.as_view(), name="request-leave"),
     path("hr/attendance-stats/", HRMonthlyAttendanceView.as_view(), name="hr-attendance-stats"),#hr self portal
     path("hrcommunity/",CommunityView.as_view(), name="hrcommunity"),
     path('hrdesignation/', DesignationListCreateView.as_view(), name='designation-list-create'),
@@ -68,13 +57,11 @@ urlpatterns = [
     path("empprofile/",EmployeeProfileView.as_view(), name="empprofile"),
     path("change-password/",ChangePasswordView.as_view(), name="change-password"),
     path("empleavebalance/",EmployeeLeaveBalanceView.as_view(), name="empleavebalance"),
-    #path("empleavebalancehistory/",LeaveHistoryView.as_view(), name="empleavebalancehistory"),
     path("policy-view/",PolicyListView.as_view(), name="policyview"),
     path('leave-type/', LeaveTypeListView.as_view(), name='leave-types'),
     path('leavesummary/',LeaveBalanceSummaryView.as_view(), name='leavesummary'),
     path('empattendstat/',MonthlyAttendanceStatisticsView.as_view(), name='empattendstat'),
     path('working-hours/', WorkingHoursListCreateView.as_view(), name='working_hours'),
-    # path('shift-rosters/', ShiftRosterListCreateView.as_view(), name='shift_rosters'),
     path('assign-shift/', AssignShiftView.as_view(), name='assign_shift'),
     path('assignview/',AssignedShiftView.as_view(), name='assignview'),
     path('employee-shifts/', EmployeeShiftView.as_view(), name='employee_shifts'),

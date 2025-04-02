@@ -27,12 +27,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-#DEBUG = os.environ.get('DEBUG', 'False') == 'True'
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+#DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
-
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # Application definition
 
 INSTALLED_APPS = [
@@ -70,7 +70,6 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-CORS_ALLOW_CREDENTIALS = True
 
 ROOT_URLCONF = 'presence.urls'
 
@@ -92,19 +91,26 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'presence.wsgi.application'
 
-MIDDLEWARE.insert(0, 'corsheaders.middleware.CorsMiddleware')
 
-CORS_ALLOWED_ORIGINS = [
-    #"http://localhost:5000", 
-    #"http://192.168.251.51:8000", 
-    "https://presence-nu.vercel.app",
-]
+CORS_ALLOW_ALL_ORIGINS = True
+
+# CORS_ALLOWED_ORIGINS = [
+ 
+#     "https://presence-nu.vercel.app",
+#     "http://localhost:5000",
+#     "http://197.168.251.97:5000"
+# ]
+
+# CORS_ALLOWED_ORIGINS = ['*']
 
 CORS_ALLOW_CREDENTIALS = True 
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://presence-nu.vercel.app",
-]
+# CSRF_TRUSTED_ORIGINS = [
+#     "https://presence-plus.onrender.com",
+#     "https://presence-nu.vercel.app",
+#     "http://192.168.251.97:5000",
+#     "http://192.168.251.51:8000"
+# ]
 
 CORS_ALLOW_METHODS = [
     "GET",
@@ -116,8 +122,10 @@ CORS_ALLOW_METHODS = [
 ]
 
 CORS_ALLOW_HEADERS = [
-    "content-type",
+    "accept",
     "authorization",
+    "content-type",
+    "user-agent",
     "x-csrftoken",
     "x-requested-with",
 ]
@@ -169,13 +177,11 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 PASSWORD_HASHERS = [
-     'django.contrib.auth.hashers.Argon2PasswordHasher',  # Uses Argon2
+    'django.contrib.auth.hashers.Argon2PasswordHasher',  # Uses Argon2
     'django.contrib.auth.hashers.PBKDF2PasswordHasher',  # Backup option
     'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',
     'django.contrib.auth.hashers.BCryptSHA256PasswordHasher',
 ]
-
-AUTH_USER_MODEL = 'presence_plus.User'  # Update this with your actual app name
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
@@ -228,10 +234,11 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend"
+    ]
 }
-
 
 
 from datetime import timedelta
@@ -278,10 +285,6 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 if not DEBUG:
     STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [],
-    'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.AllowAny'],
-}
 
 CELERY_TASK_ALWAYS_EAGER = False
 CELERY_TASK_SERIALIZER = 'json'
