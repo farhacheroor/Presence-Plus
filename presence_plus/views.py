@@ -797,50 +797,51 @@ class LeaveBalanceSummaryView(APIView):
     def get(self, request):
         """Retrieve total available and used leave for the logged-in employee."""
         try:
-            employee = request.user.employee
+            employee = getattr(request.user, 'employee', None)
+            if not employee:
+                return Response({"error": "Employee record not found"}, status=status.HTTP_404_NOT_FOUND)
 
-            #  Fetch leave balances correctly
             leave_balances = LeaveBalance.objects.filter(employee=employee)
 
-            #  Get the total leave from LeaveBalance table
-            total_leave = sum(lb.total for lb in leave_balances)
-            available_leave = sum(lb.total - lb.used for lb in leave_balances)  
+            # Ensure leave balance values are not None
+            total_leave = sum(lb.total or 0 for lb in leave_balances)
+            available_leave = sum((lb.total or 0) - (lb.used or 0) for lb in leave_balances)
 
-            # Fetch approved, pending, rejected, and canceled leave requests
+            # Fetch approved, rejected, and canceled leave requests
             approved_leaves = LeaveRequest.objects.filter(employee=employee, status="Approved")
-            #pending_leaves = LeaveRequest.objects.filter(employee=employee, status="Pending")
             rejected_leaves = LeaveRequest.objects.filter(employee=employee, status="Rejected")
             canceled_leaves = LeaveRequest.objects.filter(employee=employee, status="Cancelled")
 
-            #  Sum leave days correctly
-            approved_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in approved_leaves)
-            #pending_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in pending_leaves)
-            refunded_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in canceled_leaves)
-            rejected_leave_days = sum((lr.end_date - lr.start_date).days + 1 for lr in rejected_leaves)  
+            # Helper function to prevent NoneType errors
+            def get_leave_days(lr):
+                if lr.start_date and lr.end_date:
+                    return (lr.end_date - lr.start_date).days + 1
+                return 0
 
-            #  Ensure available leave is adjusted when rejected leaves are added back
-            adjusted_available_leave = available_leave + rejected_leave_days  
+            # Sum leave days correctly
+            approved_leave_days = sum(get_leave_days(lr) for lr in approved_leaves)
+            rejected_leave_days = sum(get_leave_days(lr) for lr in rejected_leaves)
+            refunded_leave_days = sum(get_leave_days(lr) for lr in canceled_leaves)
 
-            # Fix: Calculate used leave based on approved leave requests instead of LeaveBalance
-            used_leave = approved_leave_days  
+            adjusted_available_leave = available_leave + rejected_leave_days
+            used_leave = approved_leave_days  # Fetch used leave correctly
 
             data = {
                 "total_leave": total_leave,
-                "used_leave": used_leave,  #  Now fetched from approved leaves
-                #"pending_leave": pending_leave_days,
+                "used_leave": used_leave,
                 "refunded_leave": refunded_leave_days,
                 "rejected_leave": rejected_leave_days,
-                "available_leave": adjusted_available_leave,  
+                "available_leave": adjusted_available_leave,
                 "overall_summary": {
-                    "total_leaves_used": used_leave + pending_leave_days - refunded_leave_days,
+                    "total_leaves_used": used_leave - refunded_leave_days,
                     "total_remaining_leaves": adjusted_available_leave,
                 },
             }
 
             return Response(data, status=status.HTTP_200_OK)
 
-        except Employee.DoesNotExist:
-            return Response({"error": "Employee record not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 #############   Leave cancellation required ####################
 
