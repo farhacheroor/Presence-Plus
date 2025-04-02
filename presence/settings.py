@@ -74,7 +74,6 @@ CORS_ALLOW_CREDENTIALS = True
 
 ROOT_URLCONF = 'presence.urls'
 
-CORS_ALLOW_ALL_ORIGINS = True
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -107,7 +106,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://presence-nu.vercel.app",
 ]
 
-ORS_ALLOW_METHODS = [
+CORS_ALLOW_METHODS = [
     "GET",
     "POST",
     "PUT",
