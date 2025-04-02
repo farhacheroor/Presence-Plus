@@ -5,6 +5,8 @@ from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
 from rest_framework import status
 import re
+import openpyxl
+from openpyxl.styles import Font
 from django.db.models import F, Sum, Q
 from django.db.models.functions import TruncMonth
 from django.utils.encoding import force_str
@@ -2542,8 +2544,7 @@ class HRAttendanceRequestView(APIView):
 
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-import openpyxl
-from openpyxl.styles import Font
+
 class GenerateReportView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
