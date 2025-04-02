@@ -96,12 +96,25 @@ WSGI_APPLICATION = 'presence.wsgi.application'
 MIDDLEWARE.insert(0, 'corsheaders.middleware.CorsMiddleware')
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5000", 
-    "http://192.168.251.51:8000", 
+    #"http://localhost:5000", 
+    #"http://192.168.251.51:8000", 
     "https://presence-nu.vercel.app",
 ]
 
 CORS_ALLOW_CREDENTIALS = True 
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://presence-nu.vercel.app",
+]
+
+ORS_ALLOW_METHODS = [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+]
 
 CORS_ALLOW_HEADERS = [
     "content-type",
