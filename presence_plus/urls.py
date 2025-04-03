@@ -8,7 +8,7 @@ router = DefaultRouter()
 
 router.register(r'leave-policy', LeavePolicyCreateView, basename="leave-policy")
 router.register(r'leave-policies', LeavePolicyViewSet, basename='leave-policies')
-router.register(r'leave-policy-update',LeavePolicyDetailView, basename='leave-update')
+router.register(r'leave-update',LeavePolicyDetailView, basename='leave-update')
 router.register(r'work-time-view',WorkTimePolicyDetailView, basename='work-time-view')
 router.register(r'work-time-policies',WorkTimePolicyCreateListView, basename='work-time-policies')
 

@@ -1172,20 +1172,42 @@ class AttendanceListView(APIView):
         except Employee.DoesNotExist:
             return Response({"error": "Employee record not found"}, status=status.HTTP_404_NOT_FOUND)
 
-
 class AttendanceRequestView(generics.ListCreateAPIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     serializer_class = AttendanceRequestSerializer
 
     def get_queryset(self):
-        return AttendanceRequest.objects.filter(employee=self.request.user.employee)  
+        return AttendanceRequest.objects.filter(employee=self.request.user.employee)
 
     def perform_create(self, serializer):
-        """Ensure employee is correctly assigned and date is set to today"""
-        employee = self.request.user.employee  
-        today = date.today()  
-        serializer.save(employee=employee, date=today)
+        employee = self.request.user.employee
+        requested_date = serializer.validated_data.get('date', timezone.now().date())
+
+        # Rule 1: Check if attendance already exists for this date
+        if Attendance.objects.filter(employee=employee, date=requested_date).exists():
+            raise ValidationError(
+                {"error": f"Attendance already recorded for {requested_date}. Request denied."},
+                code="attendance_exists"
+            )
+
+        # Rule 2: Check if an attendance request already exists for this date
+        if AttendanceRequest.objects.filter(employee=employee, date=requested_date).exists():
+            raise ValidationError(
+                {"error": f"You already have a pending attendance request for {requested_date}."},
+                code="duplicate_request"
+            )
+
+        # Rule 3 (Optional): Restrict requests to the past 30 days
+        thirty_days_ago = timezone.now().date() - timedelta(days=30)
+        if requested_date < thirty_days_ago:
+            raise ValidationError(
+                {"error": "Cannot request attendance for dates older than 30 days."},
+                code="date_too_old"
+            )
+
+        # If all checks pass, save the request
+        serializer.save(employee=employee, date=requested_date) 
 
 class AttendanceRequestApprovalView(APIView):
     authentication_classes = [JWTAuthentication]
@@ -2209,7 +2231,7 @@ class ShiftColleaguesDashboardView(APIView):
 
 class NotificationListView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         notifications = Notification.objects.filter(user=request.user).order_by('-time_stamp')
@@ -2255,7 +2277,8 @@ class OvertimeSummaryView(APIView):
             "employees_on_ot_today": employees_on_ot_today,
             "employees_overtime": employee_data
         }, status=200)
-import csv
+import openpyxl
+from openpyxl.utils import get_column_letter        
 class OvertimeSummaryDownloadView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -2305,17 +2328,18 @@ class OvertimeSummaryDownloadView(APIView):
                 total_hours=Sum('hours')
             ).order_by('employee__name', 'date')
 
-            # Create CSV response
-            response = HttpResponse(content_type='text/csv')
-            response['Content-Disposition'] = 'attachment; filename="overtime_report.csv"'
+            # Create Excel workbook and sheet
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Overtime Report"
 
-            writer = csv.writer(response)
             # Write headers
-            writer.writerow(['Employee ID', 'Name', 'Department', 'Date', 'Hours', 'Status'])
-            
-            # Write data rows directly from queryset (no intermediate 'result' list needed)
+            headers = ['Employee ID', 'Name', 'Department', 'Date', 'Hours', 'Status']
+            ws.append(headers)
+
+            # Write data rows
             for record in report_data:
-                writer.writerow([
+                ws.append([
                     record['employee__id'],
                     record['employee__name'],
                     record['employee__user__department'],
@@ -2324,6 +2348,16 @@ class OvertimeSummaryDownloadView(APIView):
                     record['status']
                 ])
 
+            # Adjust column width for better readability
+            for col_num, column_title in enumerate(headers, 1):
+                column_letter = get_column_letter(col_num)
+                ws.column_dimensions[column_letter].width = 15
+
+            # Create HTTP response for file download
+            response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = 'attachment; filename="overtime_report.xlsx"'
+
+            wb.save(response)
             return response
 
         except Exception as e:
@@ -2463,13 +2497,18 @@ class HRAttendanceView(APIView):
                 try:
                     year, month = map(int, month_str.split('-'))
                     start_date = date(year, month, 1)
-                    end_date = (start_date + timedelta(days=31)).replace(day=1) - timedelta(days=1)  # Last day of the month
+                    end_date = (start_date + timedelta(days=31)).replace(day=1) - timedelta(days=1)  # Last day of month
                 except ValueError:
-                    return Response({"error": "Invalid month format. Use 'YYYY-MM'."}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response({"error": "Invalid month format. Use 'YYYY-MM'."}, 
+                                  status=status.HTTP_400_BAD_REQUEST)
 
             elif start_date_str and end_date_str:  # Handle React's "YYYY-MM-DD"
-                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+                try:
+                    start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                    end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    return Response({"error": "Invalid date format. Use 'YYYY-MM-DD'."},
+                                  status=status.HTTP_400_BAD_REQUEST)
 
             # Determine user role and filter accordingly
             user_role = request.user.role.lower()
@@ -2497,18 +2536,22 @@ class HRAttendanceView(APIView):
                 total_late=Count('id', filter=Q(status='late'))
             )
 
-            attendance_percentage = 0
+            # Calculate attendance percentage
             if total_employees > 0:
                 total_days = total_employees * (end_date - start_date).days
                 present_days = attendance_stats['total_present'] or 0
                 attendance_percentage = round((present_days / total_days) * 100, 2) if total_days > 0 else 0
+            else:
+                attendance_percentage = 0
 
             # 3. Pending Requests
             pending_attendance = AttendanceRequest.objects.filter(status='pending').count()
             pending_leaves = LeaveRequest.objects.filter(status='Pending').count()
 
-            # 4. Detailed Employee Report
-            employees = Employee.objects.filter(**employee_filter).select_related('designation', 'community', 'user').annotate(
+            # 4. Detailed Employee Report with FIXED overtime calculation
+            employees = Employee.objects.filter(**employee_filter).select_related(
+                'designation', 'community', 'user'
+            ).annotate(
                 work_days=Count(
                     'attendance',
                     filter=Q(attendance__status='present') & Q(attendance__date__range=[start_date, end_date]),
@@ -2516,7 +2559,8 @@ class HRAttendanceView(APIView):
                 ),
                 absent_days=Count(
                     'attendance',
-                    filter=Q(attendance__status='absent') & Q(attendance__date__range=[start_date, end_date]), distinct=True
+                    filter=Q(attendance__status='absent') & Q(attendance__date__range=[start_date, end_date]),
+                    distinct=True
                 ),
                 approved_leaves=Count(
                     'leaverequest',
@@ -2525,11 +2569,9 @@ class HRAttendanceView(APIView):
                     ) & Q(leaverequest__start_date__lte=end_date) & Q(leaverequest__end_date__gte=start_date),
                     distinct=True
                 ),
-                total_overtime = Sum(
+                total_overtime=Sum(
                     ExpressionWrapper(
-                        (F('attendance__date') + F('attendance__check_out')) - 
-                        (F('attendance__date') + F('attendance__check_in')) - 
-                        timedelta(hours=8),
+                        F('attendance__check_out') - F('attendance__check_in') - timedelta(hours=8),
                         output_field=DurationField()
                     ),
                     filter=Q(attendance__date__range=[start_date, end_date]),
@@ -2539,6 +2581,15 @@ class HRAttendanceView(APIView):
 
             employee_data = []
             for emp in employees:
+                # Format overtime hours properly
+                if emp.total_overtime:
+                    total_seconds = emp.total_overtime.total_seconds()
+                    hours = int(total_seconds // 3600)
+                    minutes = int((total_seconds % 3600) // 60)
+                    overtime_str = f"{hours}:{minutes:02d}"
+                else:
+                    overtime_str = "0:00"
+
                 employee_data.append({
                     'emp_id': emp.id,
                     'emp_num': emp.emp_num,
@@ -2548,7 +2599,7 @@ class HRAttendanceView(APIView):
                     'work_days': emp.work_days or 0,
                     'absent_days': emp.absent_days or 0,
                     'approved_leaves': emp.approved_leaves or 0,
-                    'total_overtime': str(emp.total_overtime).split('.')[0] if emp.total_overtime else '0:00',
+                    'total_overtime': overtime_str,
                     'image': request.build_absolute_uri(emp.image.url) if emp.image else None
                 })
 
