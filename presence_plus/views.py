@@ -2255,56 +2255,82 @@ class OvertimeSummaryView(APIView):
             "employees_on_ot_today": employees_on_ot_today,
             "employees_overtime": employee_data
         }, status=200)
-
+import csv
 class OvertimeSummaryDownloadView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        today = date.today()
+        try:
+            # Get query parameters
+            start_date_str = request.query_params.get('startDate')
+            end_date_str = request.query_params.get('endDate')
+            department = request.query_params.get('department', 'All')
 
-        # Fetch overtime data
-        total_overtime = Overtime.objects.aggregate(total_hours=Sum('hours'))['total_hours'] or 0
-        employees_on_ot_today = Overtime.objects.filter(date=today).values('employee').distinct().count()
-        total_ot_this_month = Overtime.objects.filter(
-            date__year=today.year, date__month=today.month
-        ).aggregate(total_hours=Sum('hours'))['total_hours'] or 0
+            # Validate required parameters
+            if not start_date_str or not end_date_str:
+                return Response(
+                    {'error': 'Both startDate and endDate are required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        employees_overtime = (
-            Overtime.objects
-            .values('employee__id', 'employee__name', 'employee__designation__desig_name')
-            .annotate(total_hours=Sum('hours'))
-            .order_by('-total_hours')  # Sort by highest overtime
-        )
+            # Convert dates
+            try:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response(
+                    {'error': 'Invalid date format. Use YYYY-MM-DD'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        # Create an Excel workbook and sheet
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Overtime Summary"
+            # Build base query
+            queryset = Overtime.objects.filter(
+                date__gte=start_date,
+                date__lte=end_date
+            ).select_related('employee', 'employee__user')
 
-        # Define headers
-        headers = ["Employee ID", "Name", "Designation", "Total Overtime (hrs)"]
-        ws.append(headers)
+            # Filter by department if specified
+            if department != 'All':
+                queryset = queryset.filter(employee__user__department=department)
 
-        # Apply styling to headers
-        for col in range(1, len(headers) + 1):
-            ws.cell(row=1, column=col).font = Font(bold=True)
+            # Annotate with total hours
+            report_data = queryset.values(
+                'employee__id',
+                'employee__name',
+                'employee__user__department',
+                'date',
+                'status'
+            ).annotate(
+                total_hours=Sum('hours')
+            ).order_by('employee__name', 'date')
 
-        # Add employee data
-        for emp in employees_overtime:
-            ws.append([
-                emp["employee__id"],
-                emp["employee__name"],
-                emp["employee__designation__desig_name"],
-                emp["total_hours"]
-            ])
+            # Create CSV response
+            response = HttpResponse(content_type='text/csv')
+            response['Content-Disposition'] = 'attachment; filename="overtime_report.csv"'
 
-        # Generate the Excel file in memory
-        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        response['Content-Disposition'] = f'attachment; filename="Overtime_Summary_{today}.xlsx"'
-        
-        wb.save(response)
-        return response
+            writer = csv.writer(response)
+            # Write headers
+            writer.writerow(['Employee ID', 'Name', 'Department', 'Date', 'Hours', 'Status'])
+            
+            # Write data rows directly from queryset (no intermediate 'result' list needed)
+            for record in report_data:
+                writer.writerow([
+                    record['employee__id'],
+                    record['employee__name'],
+                    record['employee__user__department'],
+                    record['date'].strftime('%Y-%m-%d'),
+                    float(record['total_hours']),
+                    record['status']
+                ])
+
+            return response
+
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class EmployeeOvertimeDetailView(APIView):
     authentication_classes = [JWTAuthentication]
