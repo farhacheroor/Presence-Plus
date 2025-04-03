@@ -27,8 +27,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'False') == 'True'
-#DEBUG = True
+# DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
@@ -220,6 +220,15 @@ CELERY_ENABLE_UTC = True
 # Ensure retries on startup (Fixes Celery 6.0+ warning)
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True  
 
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    'credit-leave-monthly': {
+        'task': 'presence_plus.tasks.credit_leave',  # Update "your_app" to your actual app name
+        'schedule': crontab(day_of_month=1, hour=0, minute=0),  # Runs at midnight on the 1st of every month
+        'options': {'queue': 'periodic-tasks'}  # Optional: use a dedicated queue
+    },
+}
 
 # Custom User Model
 AUTH_USER_MODEL = "presence_plus.User" 
@@ -281,8 +290,10 @@ APPEND_SLASH=False
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-# Add this in production to serve media files
 if not DEBUG:
+    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')  
+    MEDIA_URL = '/media/' 
+    MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
     STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 

@@ -1121,7 +1121,7 @@ class MonthlyAttendanceStatisticsView(APIView):
 
 class AttendanceListView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """Fetch attendance records and manual attendance requests for the logged-in employee"""
@@ -1175,7 +1175,7 @@ class AttendanceListView(APIView):
 
 class AttendanceRequestView(generics.ListCreateAPIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
     serializer_class = AttendanceRequestSerializer
 
     def get_queryset(self):
@@ -1407,7 +1407,7 @@ class EmployeeLeaveBalanceView(APIView):
             leave_requests = LeaveRequest.objects.filter(
                 employee=employee,
                 leave_policy=leave_policy,
-                status__in=["Approved", "Pending"],
+                status__in=["Approved", "Cancel Rejected"],
                 cancellation_request=False
             )
 
@@ -1660,7 +1660,7 @@ class ApproveRejectLeaveView(APIView):
     
 class PendingLeaveRequestsView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """Retrieve all pending leave requests submitted by employees, accessible only by HR."""
@@ -1714,21 +1714,35 @@ class PendingLeaveCancellationRequestsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        """Retrieve all leave requests that are pending cancellation approval."""
-        if request.user.role.lower() != "hr":  # Ensure only HR can access
-            return Response(
-                {"error": "Access denied! Only HR can view leave cancellation requests."},
-                status=status.HTTP_403_FORBIDDEN
+        """Retrieve leave requests pending cancellation approval based on user role."""
+        user_role = request.user.role.lower()  # Role is stored in the User model
+
+        if user_role == "hr":
+            # HR can see leave cancellation requests from employees
+            pending_cancellations = LeaveRequest.objects.filter(
+                status="Cancellation Pending",
+                employee__user__role="employee"  # Accessing role from User model
             )
 
-        # Fetch leave requests that are pending cancellation approval
-        pending_cancellations = LeaveRequest.objects.filter(status="Cancellation Pending")
+        elif user_role == "admin":
+            # Admin can see leave cancellation requests from HRs
+            pending_cancellations = LeaveRequest.objects.filter(
+                status="Cancellation Pending",
+                employee__user__role="hr"  # Accessing role from User model
+            )
+
+        else:
+            return Response(
+                {"error": "Access denied! Only HR and Admin can view leave cancellation requests."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         # Serialize the data
         data = [
             {
                 "id": leave.id,
-                "employee": leave.employee.name,
+                "name": leave.employee.name,
+                "employee_role": leave.employee.user.role,  
                 "leave_type": leave.leave_policy.leave_type if leave.leave_policy else "Unknown",
                 "reason": leave.reason,
                 "start_date": leave.start_date,
@@ -1754,14 +1768,14 @@ class LeaveHistoryView(APIView):
                 # HR can view employees' leave history
                 leave_history = LeaveRequest.objects.filter(
                     employee__user__role="employee",  
-                    status__in=["Approved", "Cancel Rejected"]
+                    status__in=["Approved", "Cancel Rejected", "approved"]
                 ).order_by("-start_date")
 
             elif user_role == "admin":
                 # Admin can view HRs' leave history
                 leave_history = LeaveRequest.objects.filter(
                     employee__user__role="hr",  
-                    status__in=["Approved", "Cancel Rejected"]
+                    status__in=["Approved", "Cancel Rejected", "approved"]
                 ).order_by("-start_date")
 
             else:
@@ -2211,26 +2225,21 @@ class OvertimeSummaryView(APIView):
     def get(self, request):
         today = date.today()
 
-        # 1. Calculate total overtime done by all employees
-        total_overtime = Overtime.objects.aggregate(total_hours=Sum('hours'))['total_hours'] or 0
+        # 1. Calculate total overtime (only 'Completed' status) for all time
+        total_overtime = Overtime.objects.filter(status="completed").aggregate(total_hours=Sum('hours'))['total_hours'] or 0
 
-        # 2. Count number of employees who have overtime today
-        employees_on_ot_today = Overtime.objects.filter(date=today).values('employee').distinct().count()
+        # 2. Count number of employees who have completed overtime today
+        employees_on_ot_today = Overtime.objects.filter(date=today, status="completed").values('employee').distinct().count()
 
-        # 3. Calculate total overtime done this month
-        total_ot_this_month = Overtime.objects.filter(
-            date__year=today.year, date__month=today.month
-        ).aggregate(total_hours=Sum('hours'))['total_hours'] or 0
-
-        # 4. Get list of employees with their total overtime, designation, and ID
+        # 3. Get list of employees with their total completed overtime, designation, and ID
         employees_overtime = (
-            Overtime.objects
+            Overtime.objects.filter(status="completed")  # Filter by completed status
             .values('employee__id', 'employee__name', 'employee__designation__desig_name')
             .annotate(total_hours=Sum('hours'))
             .order_by('-total_hours')  # Sort by highest overtime
         )
 
-        # 5. Format the response with employee ID
+        # 4. Format the response with employee ID
         employee_data = [
             {
                 "employee_id": emp["employee__id"],
@@ -2242,9 +2251,8 @@ class OvertimeSummaryView(APIView):
         ]
 
         return Response({
-            "total_overtime": total_overtime,
+            "total_overtime": total_overtime,  # Total completed overtime for all time
             "employees_on_ot_today": employees_on_ot_today,
-            "total_ot_this_month": total_ot_this_month,
             "employees_overtime": employee_data
         }, status=200)
 
@@ -2304,7 +2312,6 @@ class EmployeeOvertimeDetailView(APIView):
 
     def get(self, request, employee_id):
         try:
-        
             employee = get_object_or_404(
                 Employee.objects.select_related("designation", "user"),
                 id=employee_id
@@ -2318,13 +2325,11 @@ class EmployeeOvertimeDetailView(APIView):
             total_overtime = 0
 
             for overtime in completed_overtime_records:
-
                 attendance_record = Attendance.objects.filter(
                     employee=employee, date=overtime.date
                 ).first()
 
                 if attendance_record and attendance_record.check_out:
-                    
                     assigned_hours = overtime.hours
                     actual_worked_seconds = (datetime.combine(overtime.date, attendance_record.check_out) -
                                              datetime.combine(overtime.date, attendance_record.check_in)).seconds
@@ -2338,7 +2343,8 @@ class EmployeeOvertimeDetailView(APIView):
                             "date": overtime.date.strftime("%d %b"),
                             "assigned_hours": assigned_hours,
                             "actual_hours": round(actual_worked_hours, 2),
-                            "status": overtime_status
+                            "status": overtime_status,
+                            "reason": overtime.reason if hasattr(overtime, 'reason') else "No reason provided"
                         })
 
             return Response({
@@ -2351,7 +2357,6 @@ class EmployeeOvertimeDetailView(APIView):
 
         except Exception as e:
             return Response({"error": f"Internal Server Error: {str(e)}"}, status=500)
-
 
 class FirstAssignOvertimeView(APIView):
     authentication_classes = [JWTAuthentication]
@@ -2422,21 +2427,45 @@ class HRAttendanceView(APIView):
             # Get date filters from query params
             start_date_str = request.query_params.get('start_date')
             end_date_str = request.query_params.get('end_date')
-            
-            # Set default date range (last 30 days)
+            month_str = request.query_params.get('month')  # Accepts "YYYY-MM"
+
+            # Default date range (last 30 days)
             end_date = datetime.now().date()
             start_date = end_date - timedelta(days=30)
-            
-            if start_date_str:
+
+            if month_str:  # Handle Flutter's "YYYY-MM" input
+                try:
+                    year, month = map(int, month_str.split('-'))
+                    start_date = date(year, month, 1)
+                    end_date = (start_date + timedelta(days=31)).replace(day=1) - timedelta(days=1)  # Last day of the month
+                except ValueError:
+                    return Response({"error": "Invalid month format. Use 'YYYY-MM'."}, status=status.HTTP_400_BAD_REQUEST)
+
+            elif start_date_str and end_date_str:  # Handle React's "YYYY-MM-DD"
                 start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            if end_date_str:
                 end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
 
+            # Determine user role and filter accordingly
+            user_role = request.user.role.lower()
+
+            if user_role == "hr":
+                employee_filter = {"user__role": "employee"}  # HR sees only employees
+            elif user_role == "admin":
+                employee_filter = {}  # Admin sees all users
+            else:
+                return Response(
+                    {"error": "Access denied! Only HR and Admin can view attendance reports."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
             # 1. Employee Statistics
-            total_employees = Employee.objects.filter(user__role='employee').count()
+            total_employees = Employee.objects.filter(**employee_filter).count()
 
             # 2. Attendance Statistics
-            attendance_stats = Attendance.objects.filter(date__range=[start_date, end_date]).aggregate(
+            attendance_stats = Attendance.objects.filter(
+                date__range=[start_date, end_date], 
+                employee__in=Employee.objects.filter(**employee_filter)
+            ).aggregate(
                 total_present=Count('id', filter=Q(status='present')),
                 total_absent=Count('id', filter=Q(status='absent')),
                 total_late=Count('id', filter=Q(status='late'))
@@ -2445,7 +2474,7 @@ class HRAttendanceView(APIView):
             attendance_percentage = 0
             if total_employees > 0:
                 total_days = total_employees * (end_date - start_date).days
-                present_days = attendance_stats['total_present']
+                present_days = attendance_stats['total_present'] or 0
                 attendance_percentage = round((present_days / total_days) * 100, 2) if total_days > 0 else 0
 
             # 3. Pending Requests
@@ -2453,31 +2482,32 @@ class HRAttendanceView(APIView):
             pending_leaves = LeaveRequest.objects.filter(status='Pending').count()
 
             # 4. Detailed Employee Report
-            employees = Employee.objects.filter(user__role='employee').select_related('designation', 'community', 'user').annotate(
+            employees = Employee.objects.filter(**employee_filter).select_related('designation', 'community', 'user').annotate(
                 work_days=Count(
                     'attendance',
                     filter=Q(attendance__status='present') & Q(attendance__date__range=[start_date, end_date]),
-                    distinct=True  # Ensures only unique attendance dates are counted
+                    distinct=True
                 ),
-            
                 absent_days=Count(
                     'attendance',
-                    filter=Q(attendance__status='absent') & Q(attendance__date__range=[start_date, end_date])
+                    filter=Q(attendance__status='absent') & Q(attendance__date__range=[start_date, end_date]), distinct=True
                 ),
                 approved_leaves=Count(
                     'leaverequest',
-                    filter=Q(leaverequest__status='Approved') & 
-                    Q(leaverequest__start_date__lte=end_date) & 
-                    Q(leaverequest__end_date__gte=start_date)
+                    filter=(
+                        Q(leaverequest__status='Approved') | Q(leaverequest__status='Cancel Rejected')
+                    ) & Q(leaverequest__start_date__lte=end_date) & Q(leaverequest__end_date__gte=start_date),
+                    distinct=True
                 ),
                 total_overtime = Sum(
                     ExpressionWrapper(
                         (F('attendance__date') + F('attendance__check_out')) - 
                         (F('attendance__date') + F('attendance__check_in')) - 
-                        timedelta(hours=8),  # Subtract standard working hours
+                        timedelta(hours=8),
                         output_field=DurationField()
                     ),
-                    filter=Q(attendance__date__range=[start_date, end_date])
+                    filter=Q(attendance__date__range=[start_date, end_date]),
+                    distinct=True
                 )
             )
 
@@ -2505,9 +2535,9 @@ class HRAttendanceView(APIView):
                 'summary': {
                     'total_employees': total_employees,
                     'attendance_percentage': attendance_percentage,
-                    'present_days': attendance_stats['total_present'],
-                    'absent_days': attendance_stats['total_absent'],
-                    'late_days': attendance_stats['total_late'],
+                    'present_days': attendance_stats['total_present'] or 0,
+                    'absent_days': attendance_stats['total_absent'] or 0,
+                    'late_days': attendance_stats['total_late'] or 0,
                     'pending_attendance_requests': pending_attendance,
                     'pending_leave_requests': pending_leaves
                 },
@@ -2520,7 +2550,7 @@ class HRAttendanceView(APIView):
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )    
+            )
 
 class HRAttendanceRequestView(APIView):
     def get(self, request):
@@ -2535,12 +2565,53 @@ class HRAttendanceRequestView(APIView):
                     "employee_id": req.employee.id,
                     "employee_name": req.employee.name,
                     "date": req.date.strftime('%Y-%m-%d'),
+                    "work_type": req.work_type,
+                    "location": req.location,
                     "check_in": req.check_in.strftime('%H:%M') if req.check_in else None,
                     "check_out": req.check_out.strftime('%H:%M') if req.check_out else None,
                     "image": request.build_absolute_uri(req.image.url) if req.image else None,  
                 })
 
             return Response({"pending_attendance_requests": requests_data}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def post(self, request):
+        """Approve or Reject an attendance request."""
+        try:
+            request_id = request.data.get("id")
+            action = request.data.get("action")  # "approve" or "reject"
+
+            if not request_id or action not in ["approve", "reject"]:
+                return Response(
+                    {"error": "Invalid request. Provide 'id' and 'action' (approve/reject)."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            attendance_request = get_object_or_404(AttendanceRequest, id=request_id)
+
+            if action == "approve":
+                attendance_request.status = "approved"
+
+                # ✅ Automatically create an Attendance entry if approved
+                Attendance.objects.create(
+                    employee=attendance_request.employee,
+                    date=attendance_request.date,
+                    check_in=attendance_request.check_in,
+                    check_out=attendance_request.check_out,
+                    status="present"
+                )
+
+            elif action == "reject":
+                attendance_request.status = "rejected"
+
+            attendance_request.save()
+
+            return Response(
+                {"message": f"Attendance request {action}d successfully."},
+                status=status.HTTP_200_OK
+            )
 
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -2865,3 +2936,99 @@ class EmployeeAttendanceDashDetailView(APIView):
             "attendance_records": attendance_data,
             "attendance_summary": attendance_summary,  # For graphical statistics
         }, status=status.HTTP_200_OK)
+
+class AdminAttendanceReportView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            # Ensure only Admins can access
+            if not hasattr(request.user, 'role') or request.user.role.lower() != "admin":
+                return Response({"error": "Access Denied! Only Admins can generate reports."},
+                                status=status.HTTP_403_FORBIDDEN)
+
+            # Get date filters from request (from frontend format)
+            start_date = request.query_params.get('fromDate')
+            end_date = request.query_params.get('toDate')
+
+            if not start_date or not end_date:
+                return Response({"error": "Please provide fromDate and toDate in YYYY-MM-DD format."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            # Convert string dates to Date objects
+            start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+            end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+            # Fetch employees and calculate work days, leave taken, and overtime
+            employees = Employee.objects.all().annotate(
+                work_days=Count('attendance', filter=Q(attendance__status='present', attendance__date__range=[start_date, end_date]), distinct=True),
+                leave_taken=Count('leaverequest', filter=Q(leaverequest__status='Approved', leaverequest__start_date__lte=end_date, leaverequest__end_date__gte=start_date), distinct=True),
+                total_overtime=Sum('overtime', filter=Q(overtime__date__range=[start_date, end_date], overtime__status='completed'), distinct=True)
+            )
+
+            # Prepare data for JSON response
+            report_data = []
+            for emp in employees:
+                report_data.append({
+                    'name': emp.name,
+                    'workDays': emp.work_days or 0,
+                    'leaves': emp.leave_taken or 0,
+                    'overtime': emp.total_overtime or 0
+                })
+
+            return Response({
+                "message": "Report generated successfully!",
+                "data": report_data,
+                "download_url": f"/api/admin/attendance-report/download/?fromDate={start_date}&toDate={end_date}"
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class AdminAttendanceReportDownloadView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            if request.user.role.lower() != "admin":
+                return Response({"error": "Access Denied! Only Admins can download reports."},
+                                status=status.HTTP_403_FORBIDDEN)
+
+            start_date_str = request.query_params.get('start_date')
+            end_date_str = request.query_params.get('end_date')
+
+            if not start_date_str or not end_date_str:
+                return Response({"error": "Please provide start_date and end_date in YYYY-MM-DD format."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+            end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+
+            employees = Employee.objects.all().annotate(
+                work_days=Count('attendance', filter=Q(attendance__status='present', attendance__date__range=[start_date, end_date])),
+                leave_taken=Count('leaverequest', filter=Q(leaverequest__status='Approved', leaverequest__start_date__lte=end_date, leaverequest__end_date__gte=start_date)),
+                total_overtime=Sum('overtime__hours', filter=Q(overtime__date__range=[start_date, end_date], overtime__status='completed'))
+            )
+
+            # Create DataFrame for Excel
+            data = [{
+                'Employee ID': emp.id,
+                'Name': emp.name,
+                'Work Days': emp.work_days or 0,
+                'Leave Taken': emp.leave_taken or 0,
+                'Total Overtime (Hours)': emp.total_overtime or 0
+            } for emp in employees]
+
+            df = pd.DataFrame(data)
+
+            # Generate Excel file
+            response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = f'attachment; filename="Attendance_Report_{start_date}_{end_date}.xlsx"'
+            df.to_excel(response, index=False)
+
+            return response
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -136,12 +136,12 @@ class AttendanceSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class AttendanceRequestSerializer(serializers.ModelSerializer):
-    image = serializers.ImageField(required=False)  # ✅ Allow image upload
+    image = serializers.ImageField(required=False) 
 
     class Meta:
         model = AttendanceRequest
         fields = ['id', 'employee', 'date', 'check_in', 'check_out', 'work_type', 'location', 'status', 'image']
-        read_only_fields = ['employee', 'status']  # Employee and status should not be changed by the user
+        read_only_fields = ['employee', 'status'] 
 
     def validate(self, data):
         """Ensure location is provided for field work"""

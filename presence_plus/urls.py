@@ -80,5 +80,7 @@ urlpatterns = [
     path('employee/<int:employee_id>/attendance/', EmployeeAttendanceDetailView.as_view(), name='employee-attendance-detail'),
     path('attendance/add/<int:employee_id>/', AddAttendanceRecordView.as_view(), name='add-attendance'),
     path('empattendoverview/',EmployeeAttendanceDashDetailView.as_view(), name='empattendoverview'),
+    path("adminattendance/",AdminAttendanceReportView.as_view(), name='adminattendance'),
+    path("api/admin/attendance-report/download/",AdminAttendanceReportDownloadView.as_view(), name= 'attendance-report'),
 ]
 urlpatterns += router.urls           
