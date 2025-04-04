@@ -363,7 +363,7 @@ class DashboardCountsView(APIView):
 
         # Use iexact for case-insensitive filtering
         leave_requests = LeaveRequest.objects.filter(status__iexact="pending").count()
-        leave_cancellations = LeaveRequest.objects.filter(status__iexact="cancelled").count()
+        leave_cancellations = LeaveRequest.objects.filter(status__iexact="Cancellation Pending").count()
 
         return Response({
             "total_employees": total_employees,
@@ -3025,7 +3025,7 @@ class AdminAttendanceReportView(APIView):
                 return Response({"error": "Access Denied! Only Admins can generate reports."},
                                 status=status.HTTP_403_FORBIDDEN)
 
-            # Get date filters from request (from frontend format)
+            # Get date filters from request
             start_date = request.query_params.get('fromDate')
             end_date = request.query_params.get('toDate')
 
@@ -3037,21 +3037,44 @@ class AdminAttendanceReportView(APIView):
             start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
             end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
 
-            # Fetch employees and calculate work days, leave taken, and overtime
+            # Fetch employees with proper overtime calculation
             employees = Employee.objects.all().annotate(
-                work_days=Count('attendance', filter=Q(attendance__status='present', attendance__date__range=[start_date, end_date]), distinct=True),
-                leave_taken=Count('leaverequest', filter=Q(leaverequest__status='Approved', leaverequest__start_date__lte=end_date, leaverequest__end_date__gte=start_date), distinct=True),
-                total_overtime=Sum('overtime', filter=Q(overtime__date__range=[start_date, end_date], overtime__status='completed'), distinct=True)
+                work_days=Count('attendance', 
+                              filter=Q(attendance__status='present', 
+                                      attendance__date__range=[start_date, end_date]), 
+                              distinct=True),
+                leave_taken=Count('leaverequest', 
+                                filter=Q(leaverequest__status='Approved', 
+                                        leaverequest__start_date__lte=end_date, 
+                                        leaverequest__end_date__gte=start_date), 
+                                distinct=True),
+                # Correct overtime calculation
+                total_overtime=Sum(
+                    ExpressionWrapper(
+                        F('attendance__check_out') - F('attendance__check_in') - timedelta(hours=8),
+                        output_field=DurationField()
+                    ),
+                    filter=Q(attendance__date__range=[start_date, end_date],
+                            attendance__status='present'),
+                    distinct=True
+                )
             )
 
             # Prepare data for JSON response
             report_data = []
             for emp in employees:
+                # Format overtime properly
+                overtime_hours = 0
+                if emp.total_overtime:
+                    total_seconds = emp.total_overtime.total_seconds()
+                    if total_seconds > 0:  # Only count positive overtime
+                        overtime_hours = round(total_seconds / 3600, 2)
+
                 report_data.append({
                     'name': emp.name,
                     'workDays': emp.work_days or 0,
                     'leaves': emp.leave_taken or 0,
-                    'overtime': emp.total_overtime or 0
+                    'overtime': overtime_hours
                 })
 
             return Response({
