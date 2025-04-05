@@ -2294,7 +2294,7 @@ class OvertimeSummaryDownloadView(APIView):
             # Get query parameters
             start_date_str = request.query_params.get('startDate')
             end_date_str = request.query_params.get('endDate')
-            department = request.query_params.get('department', 'All')
+            #department = request.query_params.get('department', 'All')
 
             # Validate required parameters
             if not start_date_str or not end_date_str:
@@ -2320,8 +2320,8 @@ class OvertimeSummaryDownloadView(APIView):
             ).select_related('employee', 'employee__user')
 
             # Filter by department if specified
-            if department != 'All':
-                queryset = queryset.filter(employee__user__department=department)
+            # if department != 'All':
+            #     queryset = queryset.filter(employee__user__department=department)
 
             # Annotate with total hours
             report_data = queryset.values(
