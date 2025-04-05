@@ -1,6 +1,6 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from .models import LeaveRequest, Notification
+from .models import *
 from django.contrib.auth import get_user_model
 
 User = get_user_model()  # Get the User model dynamically
@@ -23,3 +23,8 @@ def send_leave_request_notification(sender, instance, created, **kwargs):
             message=f"Your leave request has been {instance.status}.",
             type="Leave Status"
         )
+
+
+def handle_leave_status_change(sender, instance, created, **kwargs):
+    if not created:  # Trigger only on update, not on creation
+        update_leave_balance_on_status_change(instance)

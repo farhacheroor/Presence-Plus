@@ -23,7 +23,7 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django_celery_beat.utils import now
 from jwt.utils import force_bytes
 import logging
-from presence_plus.models import User  # Import your custom model directly
+from presence_plus.models import User  
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status, permissions, generics, viewsets, mixins,filters
@@ -358,12 +358,23 @@ class DashboardCountsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        # Count by role from User model
         total_employees = User.objects.filter(role__iexact="Employee").count()
         total_hr = User.objects.filter(role__iexact="HR").count()
 
-        # Use iexact for case-insensitive filtering
-        leave_requests = LeaveRequest.objects.filter(status__iexact="pending").count()
-        leave_cancellations = LeaveRequest.objects.filter(status__iexact="Cancellation Pending").count()
+        # Get all Employee objects whose user is HR
+        hr_employees = Employee.objects.filter(user__role__iexact="HR")
+
+        # Count leave requests for HRs only
+        leave_requests = LeaveRequest.objects.filter(
+            status__iexact="pending",
+            employee__in=hr_employees
+        ).count()
+
+        leave_cancellations = LeaveRequest.objects.filter(
+            status__iexact="Cancellation Pending",
+            employee__in=hr_employees
+        ).count()
 
         return Response({
             "total_employees": total_employees,
@@ -379,29 +390,30 @@ class AttendanceStatsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        period = request.query_params.get("period", "weekly")  # Default to weekly
-        today = datetime.now().date()
+        current_year = datetime.now().year
+        attendance_summary = []
 
-        if period == "weekly":
-            start_date = today - timedelta(days=today.weekday())  # Start of the week (Monday)
-        elif period == "monthly":
-            start_date = today.replace(day=1)  # Start of the month
-        else:
-            return Response({"error": "Invalid period. Use 'weekly' or 'monthly'."}, status=status.HTTP_400_BAD_REQUEST)
+        for month in range(1, 13):
+            # Get the first and last day of the month
+            first_day = date(current_year, month, 1)
+            last_day = date(current_year, month, calendar.monthrange(current_year, month)[1])
 
-        # Filter attendance records within the selected period
-        attendance_data = Attendance.objects.filter(date__gte=start_date, date__lte=today)
+            # Filter attendance records for that month
+            monthly_attendance = Attendance.objects.filter(date__gte=first_day, date__lte=last_day)
 
-        present_count = attendance_data.filter(status="present").count()
-        absent_count = attendance_data.filter(status="absent").count()
-        late_count = attendance_data.filter(status="late").count()
+            # Count each status
+            present = monthly_attendance.filter(status="present").count()
+            absent = monthly_attendance.filter(status="absent").count()
+            late = monthly_attendance.filter(status="late").count()
 
+            attendance_summary.append({
+                "month": first_day.strftime("%B"),  # e.g. January
+                "present": present,
+                "absent": absent,
+                "late": late
+            })
 
-        return Response({
-            "present": present_count,
-            "absent": absent_count,
-            "late": late_count
-        }, status=status.HTTP_200_OK)
+        return Response(attendance_summary, status=status.HTTP_200_OK)
 
 ###############     Leave request view  ##################
 class LeaveRequestListView(APIView):
@@ -805,37 +817,36 @@ class LeaveBalanceSummaryView(APIView):
 
             leave_balances = LeaveBalance.objects.filter(employee=employee)
 
-            # Ensure leave balance values are not None
+            # Total and available leave from balance model
             total_leave = sum(lb.total or 0 for lb in leave_balances)
-            available_leave = sum((lb.total or 0) - (lb.used or 0) for lb in leave_balances)
+            used_leave_from_balance = sum(lb.used or 0 for lb in leave_balances)
+            available_leave = total_leave - used_leave_from_balance
 
-            # Fetch approved, rejected, and canceled leave requests
+            # Get leave requests by status
             approved_leaves = LeaveRequest.objects.filter(employee=employee, status="Approved")
             rejected_leaves = LeaveRequest.objects.filter(employee=employee, status="Rejected")
             canceled_leaves = LeaveRequest.objects.filter(employee=employee, status="Cancelled")
 
-            # Helper function to prevent NoneType errors
             def get_leave_days(lr):
                 if lr.start_date and lr.end_date:
                     return (lr.end_date - lr.start_date).days + 1
                 return 0
 
-            # Sum leave days correctly
             approved_leave_days = sum(get_leave_days(lr) for lr in approved_leaves)
             rejected_leave_days = sum(get_leave_days(lr) for lr in rejected_leaves)
             refunded_leave_days = sum(get_leave_days(lr) for lr in canceled_leaves)
 
-            adjusted_available_leave = available_leave + rejected_leave_days
-            used_leave = approved_leave_days  # Fetch used leave correctly
+            # Adjust available leave based on canceled and rejected requests
+            adjusted_available_leave = available_leave + refunded_leave_days + rejected_leave_days
 
             data = {
                 "total_leave": total_leave,
-                "used_leave": used_leave,
+                "used_leave": approved_leave_days,
                 "refunded_leave": refunded_leave_days,
                 "rejected_leave": rejected_leave_days,
                 "available_leave": adjusted_available_leave,
                 "overall_summary": {
-                    "total_leaves_used": used_leave - refunded_leave_days,
+                    "total_leaves_used": approved_leave_days - refunded_leave_days,
                     "total_remaining_leaves": adjusted_available_leave,
                 },
             }
