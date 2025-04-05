@@ -384,7 +384,7 @@ class DashboardCountsView(APIView):
         }, status=status.HTTP_200_OK)
 
 ##################      admin dashboard statistics  ###############
-
+import calendar
 class AttendanceStatsView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -1801,7 +1801,7 @@ class LeaveHistoryView(APIView):
                 # HR can view employees' leave history
                 leave_history = LeaveRequest.objects.filter(
                     employee__user__role="employee",  
-                    status__in=["Approved", "Cancel Rejected", "approved"]
+                    status__in=["Approved", "Cancel Rejected", "approved", "Accepted"]
                 ).order_by("-start_date")
 
             elif user_role == "admin":
