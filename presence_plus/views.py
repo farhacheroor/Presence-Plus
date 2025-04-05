@@ -1123,7 +1123,7 @@ class AttendanceListView(APIView):
             employee = request.user.employee
 
             # Fetch attendance records
-            attendance_records = Attendance.objects.filter(employee=employee)
+            #attendance_records = Attendance.objects.filter(employee=employee)
 
             # Fetch manual attendance requests
             attendance_requests = AttendanceRequest.objects.filter(employee=employee)
@@ -1508,7 +1508,7 @@ class HRDashboardView(APIView):
             employee__in=hr_employees
         ).count()
 
-        attendance_request = AttendanceRequest.object.filter(
+        attendance_requests = AttendanceRequest.object.filter(
             status__iexact="pending",
             employee__in=hr_employees
         ).count
@@ -1551,7 +1551,7 @@ class HRDashboardView(APIView):
         return Response({
             "total_employees": serialized_employees,
             "on_leave_today": on_leave_today,
-            "leave_requests": pending_leave_requests,  
+            "leave_requests": leave_requests,  
             "attendance_request": attendance_requests, 
             "leave_cancellations": leave_cancellations,
             "present": present_today,  
@@ -2281,8 +2281,10 @@ class OvertimeSummaryView(APIView):
             "employees_on_ot_today": employees_on_ot_today,
             "employees_overtime": employee_data
         }, status=200)
+
 import openpyxl
-from openpyxl.utils import get_column_letter        
+from openpyxl.utils import get_column_letter 
+
 class OvertimeSummaryDownloadView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -2556,11 +2558,12 @@ class HRAttendanceView(APIView):
             employees = Employee.objects.filter(**employee_filter).select_related(
                 'designation', 'community', 'user'
             ).annotate(
-                work_days=Count(
+                work_days = Count(
                     'attendance',
-                    filter=Q(attendance__status='present') & Q(attendance__date__range=[start_date, end_date]),
+                    filter=Q(attendance__status__in=['present', 'late']) & Q(attendance__date__range=[start_date, end_date]),
                     distinct=True
                 ),
+
                 absent_days=Count(
                     'attendance',
                     filter=Q(attendance__status='absent') & Q(attendance__date__range=[start_date, end_date]),
