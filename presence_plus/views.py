@@ -1511,7 +1511,7 @@ class HRDashboardView(APIView):
         attendance_requests = AttendanceRequest.object.filter(
             status__iexact="pending",
             employee__in=hr_employees
-        ).count
+        ).count()
         
         # Attendance statistics for today
         present_today = Attendance.objects.filter(date=today, status="present").count()
@@ -2397,21 +2397,25 @@ class EmployeeOvertimeDetailView(APIView):
 
                 if attendance_record and attendance_record.check_out:
                     assigned_hours = overtime.hours
-                    actual_worked_seconds = (datetime.combine(overtime.date, attendance_record.check_out) -
-                                             datetime.combine(overtime.date, attendance_record.check_in)).seconds
+                    actual_worked_seconds = (
+                        datetime.combine(overtime.date, attendance_record.check_out) -
+                        datetime.combine(overtime.date, attendance_record.check_in)
+                    ).seconds
                     actual_worked_hours = actual_worked_seconds / 3600
 
                     overtime_status = "Completed" if actual_worked_hours >= assigned_hours else "Incomplete"
 
                     if overtime_status == "Completed":
-                        total_overtime += assigned_hours
-                        filtered_overtime.append({
-                            "date": overtime.date.strftime("%d %b"),
-                            "assigned_hours": assigned_hours,
-                            "actual_hours": round(actual_worked_hours, 2),
-                            "status": overtime_status,
-                            "reason": overtime.reason if hasattr(overtime, 'reason') else "No reason provided"
-                        })
+                        total_overtime += assigned_hours  # Only add to total if completed
+
+                    filtered_overtime.append({
+                        "date": overtime.date.strftime("%d %b"),
+                        "assigned_hours": assigned_hours,
+                        "actual_hours": round(actual_worked_hours, 2),
+                        "status": overtime_status,
+                        "reason": overtime.reason if hasattr(overtime, 'reason') else "No reason provided"
+                    })
+
 
             return Response({
                 "name": employee.name,
