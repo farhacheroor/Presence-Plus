@@ -394,26 +394,26 @@ class AttendanceStatsView(APIView):
         attendance_summary = []
 
         for month in range(1, 13):
-            # Get the first and last day of the month
             first_day = date(current_year, month, 1)
             last_day = date(current_year, month, calendar.monthrange(current_year, month)[1])
 
-            # Filter attendance records for that month
-            monthly_attendance = Attendance.objects.filter(date__gte=first_day, date__lte=last_day)
+            monthly_attendance = Attendance.objects.filter(date__range=(first_day, last_day))
 
-            # Count each status
-            present = monthly_attendance.filter(status="present").count()
-            absent = monthly_attendance.filter(status="absent").count()
-            late = monthly_attendance.filter(status="late").count()
+            present_count = monthly_attendance.filter(status="present").count()
+            absent_count = monthly_attendance.filter(status="absent").count()
+            late_count = monthly_attendance.filter(status="late").count()
 
             attendance_summary.append({
-                "month": first_day.strftime("%B"),  # e.g. January
-                "present": present,
-                "absent": absent,
-                "late": late
+                "month": first_day.strftime("%B"),  # 'January', 'February', etc.
+                "present": present_count,
+                "absent": absent_count,
+                "late": late_count
             })
 
-        return Response(attendance_summary, status=status.HTTP_200_OK)
+        return Response({
+            "year": current_year,
+            "attendance_stats": attendance_summary
+        }, status=200)
 
 ###############     Leave request view  ##################
 class LeaveRequestListView(APIView):
@@ -2752,11 +2752,10 @@ class GenerateReportView(APIView):
 
     def get(self, request):
         try:
-            # Get date filters
+            # Parse date filters
             start_date_str = request.query_params.get('start_date')
             end_date_str = request.query_params.get('end_date')
 
-            # Default to last 30 days
             end_date = datetime.now().date()
             start_date = end_date - timedelta(days=30)
 
@@ -2765,12 +2764,11 @@ class GenerateReportView(APIView):
             if end_date_str:
                 end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
 
-            # Get all employees with role 'employee'
-            employees = Employee.objects.filter(user__role__iexact='employee')
+            # Employees with 'employee' role
+            employees = Employee.objects.filter(user__role='employee').select_related('designation', 'community', 'user')
 
             total_employees = employees.count()
 
-            # Overall attendance statistics (summary, not per employee)
             attendance_stats = Attendance.objects.filter(
                 date__range=[start_date, end_date],
                 employee__in=employees
@@ -2780,92 +2778,79 @@ class GenerateReportView(APIView):
                 total_late=Count('id', filter=Q(status='late'))
             )
 
-            attendance_percentage = 0
-            if total_employees > 0:
-                total_days = total_employees * (end_date - start_date).days
-                present_days = attendance_stats['total_present']
-                attendance_percentage = round((present_days / total_days) * 100, 2) if total_days > 0 else 0
+            total_days = total_employees * ((end_date - start_date).days + 1)
+            present_days = attendance_stats['total_present'] or 0
+            attendance_percentage = round((present_days / total_days) * 100, 2) if total_days > 0 else 0
 
-            # Pending Requests
             pending_attendance = AttendanceRequest.objects.filter(status='pending').count()
             pending_leaves = LeaveRequest.objects.filter(status='Pending').count()
 
-            # Annotate each employee with individual stats
-            employees = employees.select_related('designation', 'community', 'user').annotate(
+            # Annotate employee-specific attendance stats
+            employees = employees.annotate(
                 present_days=Count(
                     'attendance',
-                    filter=Q(attendance__status='present') & Q(attendance__date__range=[start_date, end_date]),
-                    distinct=True
+                    filter=Q(attendance__status='present', attendance__date__range=[start_date, end_date])
                 ),
                 absent_days=Count(
                     'attendance',
-                    filter=Q(attendance__status='absent') & Q(attendance__date__range=[start_date, end_date]),
-                    distinct=True
+                    filter=Q(attendance__status='absent', attendance__date__range=[start_date, end_date])
                 ),
                 late_days=Count(
                     'attendance',
-                    filter=Q(attendance__status='late') & Q(attendance__date__range=[start_date, end_date]),
-                    distinct=True
+                    filter=Q(attendance__status='late', attendance__date__range=[start_date, end_date])
                 ),
                 approved_leaves=Count(
                     'leaverequest',
-                    filter=Q(leaverequest__status='Approved') &
-                           Q(leaverequest__start_date__lte=end_date) &
-                           Q(leaverequest__end_date__gte=start_date),
-                    distinct=True
+                    filter=Q(
+                        leaverequest__status='Approved',
+                        leaverequest__start_date__lte=end_date,
+                        leaverequest__end_date__gte=start_date
+                    )
                 ),
                 total_overtime=Sum(
                     ExpressionWrapper(
-                        (F('attendance__date') + F('attendance__check_out')) -
-                        (F('attendance__date') + F('attendance__check_in')) -
-                        timedelta(hours=8),
+                        (F('attendance__check_out') - F('attendance__check_in') - timedelta(hours=8)),
                         output_field=DurationField()
                     ),
                     filter=Q(attendance__date__range=[start_date, end_date])
                 )
             )
 
-            # Generate Excel File
             return self.generate_excel_report(start_date, end_date, total_employees, attendance_stats,
                                               attendance_percentage, pending_attendance, pending_leaves, employees)
 
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': str(e)}, status=500)
 
     def generate_excel_report(self, start_date, end_date, total_employees, attendance_stats,
                               attendance_percentage, pending_attendance, pending_leaves, employees):
-        # Create workbook and sheet
+
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "HR Attendance Report"
 
-        # Header Styles
         bold_font = Font(bold=True)
 
-        # Write Summary
         ws.append(["HR Attendance Report"])
-        ws.append([f"Report Date Range: {start_date} to {end_date}"])
+        ws.append([f"Report Duration: {start_date} to {end_date}"])
         ws.append([])
 
         ws.append(["Total Employees", total_employees])
-        ws.append(["Total Present Days", attendance_stats['total_present']])
-        ws.append(["Total Absent Days", attendance_stats['total_absent']])
-        ws.append(["Total Late Days", attendance_stats['total_late']])
+        ws.append(["Total Present Days", attendance_stats['total_present'] or 0])
+        ws.append(["Total Absent Days", attendance_stats['total_absent'] or 0])
+        ws.append(["Total Late Days", attendance_stats['total_late'] or 0])
         ws.append(["Attendance Percentage", f"{attendance_percentage}%"])
         ws.append(["Pending Attendance Requests", pending_attendance])
         ws.append(["Pending Leave Requests", pending_leaves])
         ws.append([])
 
-        # Set column headers for employee breakdown
         headers = ["Emp ID", "Emp Num", "Name", "Designation", "Community",
                    "Present Days", "Absent Days", "Late Days", "Approved Leaves", "Total Overtime"]
         ws.append(headers)
 
-        # Bold the last header row
         for cell in ws[ws.max_row]:
             cell.font = bold_font
 
-        # Write data row for each employee
         for emp in employees:
             ws.append([
                 emp.id,
@@ -2880,15 +2865,11 @@ class GenerateReportView(APIView):
                 str(emp.total_overtime).split('.')[0] if emp.total_overtime else '0:00'
             ])
 
-        # Create HTTP response with Excel content
         response = HttpResponse(
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
         response['Content-Disposition'] = f'attachment; filename=HR_Attendance_Report_{start_date}_to_{end_date}.xlsx'
-
-        # Save workbook into response
         wb.save(response)
-
         return response
 
 
