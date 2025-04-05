@@ -533,6 +533,12 @@ class PublicHolidayView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    def get(self, request):
+        holidays = PublicHoliday.objects.all().order_by('date')  
+        serializer = PublicHolidaySerializer(holidays, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
 class LeaveTypeCreateView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -835,6 +841,42 @@ class LeaveBalanceSummaryView(APIView):
             }
 
             return Response(data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def patch(self, request, pk):
+        try:
+            leave_request = LeaveRequest.objects.get(pk=pk)
+            new_status = request.data.get('status')
+
+            # Only allow HR to update
+            if request.user.role != 'HR':
+                return Response({"error": "Permission denied"}, status=status.HTTP_403_FORBIDDEN)
+
+            old_status = leave_request.status
+            leave_request.status = new_status
+            leave_request.save()
+
+            # Refund logic if status changes to Rejected or Cancelled
+            if new_status in ['Rejected', 'Cancelled'] and old_status == 'Approved':
+                leave_days = (leave_request.end_date - leave_request.start_date).days + 1
+
+                leave_balance = LeaveBalance.objects.get(
+                    employee=leave_request.employee,
+                    leave_type=leave_request.leave_type
+                )
+
+                leave_balance.used = max(0, leave_balance.used - leave_days)
+                leave_balance.save()
+
+            return Response({"message": f"Leave status updated to {new_status}"}, status=status.HTTP_200_OK)
+
+        except LeaveRequest.DoesNotExist:
+            return Response({"error": "Leave request not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        except LeaveBalance.DoesNotExist:
+            return Response({"error": "Leave balance not found"}, status=status.HTTP_404_NOT_FOUND)
 
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -2713,8 +2755,8 @@ class GenerateReportView(APIView):
             # Get date filters
             start_date_str = request.query_params.get('start_date')
             end_date_str = request.query_params.get('end_date')
-            #department = request.query_params.get('department')  # Get department filter
 
+            # Default to last 30 days
             end_date = datetime.now().date()
             start_date = end_date - timedelta(days=30)
 
@@ -2723,14 +2765,12 @@ class GenerateReportView(APIView):
             if end_date_str:
                 end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
 
-            # Employee Queryset with Department Filter
-            employees = Employee.objects.filter(user__role='employee')
-            # if department:
-            #     employees = employees.filter(user__department=department)  # Assuming department model has a `name` field
+            # Get all employees with role 'employee'
+            employees = Employee.objects.filter(user__role__iexact='employee')
 
             total_employees = employees.count()
 
-            # Attendance Statistics for Filtered Employees
+            # Overall attendance statistics (summary, not per employee)
             attendance_stats = Attendance.objects.filter(
                 date__range=[start_date, end_date],
                 employee__in=employees
@@ -2750,22 +2790,29 @@ class GenerateReportView(APIView):
             pending_attendance = AttendanceRequest.objects.filter(status='pending').count()
             pending_leaves = LeaveRequest.objects.filter(status='Pending').count()
 
-            # Employee Detailed Report with Department Filter
+            # Annotate each employee with individual stats
             employees = employees.select_related('designation', 'community', 'user').annotate(
-                work_days=Count(
+                present_days=Count(
                     'attendance',
                     filter=Q(attendance__status='present') & Q(attendance__date__range=[start_date, end_date]),
                     distinct=True
                 ),
                 absent_days=Count(
                     'attendance',
-                    filter=Q(attendance__status='absent') & Q(attendance__date__range=[start_date, end_date])
+                    filter=Q(attendance__status='absent') & Q(attendance__date__range=[start_date, end_date]),
+                    distinct=True
+                ),
+                late_days=Count(
+                    'attendance',
+                    filter=Q(attendance__status='late') & Q(attendance__date__range=[start_date, end_date]),
+                    distinct=True
                 ),
                 approved_leaves=Count(
                     'leaverequest',
                     filter=Q(leaverequest__status='Approved') &
-                    Q(leaverequest__start_date__lte=end_date) &
-                    Q(leaverequest__end_date__gte=start_date)
+                           Q(leaverequest__start_date__lte=end_date) &
+                           Q(leaverequest__end_date__gte=start_date),
+                    distinct=True
                 ),
                 total_overtime=Sum(
                     ExpressionWrapper(
@@ -2780,16 +2827,13 @@ class GenerateReportView(APIView):
 
             # Generate Excel File
             return self.generate_excel_report(start_date, end_date, total_employees, attendance_stats,
-                                            attendance_percentage, pending_attendance, pending_leaves, employees)
+                                              attendance_percentage, pending_attendance, pending_leaves, employees)
 
         except Exception as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def generate_excel_report(self, start_date, end_date, total_employees, attendance_stats,
-                          attendance_percentage, pending_attendance, pending_leaves, employees):
+                              attendance_percentage, pending_attendance, pending_leaves, employees):
         # Create workbook and sheet
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -2798,10 +2842,11 @@ class GenerateReportView(APIView):
         # Header Styles
         bold_font = Font(bold=True)
 
-        # Write Summary Data
+        # Write Summary
         ws.append(["HR Attendance Report"])
         ws.append([f"Report Date Range: {start_date} to {end_date}"])
         ws.append([])
+
         ws.append(["Total Employees", total_employees])
         ws.append(["Total Present Days", attendance_stats['total_present']])
         ws.append(["Total Absent Days", attendance_stats['total_absent']])
@@ -2811,16 +2856,16 @@ class GenerateReportView(APIView):
         ws.append(["Pending Leave Requests", pending_leaves])
         ws.append([])
 
-        # Set column names
-        headers = ["Emp ID", "Emp Num", "Name", "Designation", "Community", "Work Days",
-                "Absent Days", "Approved Leaves", "Total Overtime"]
+        # Set column headers for employee breakdown
+        headers = ["Emp ID", "Emp Num", "Name", "Designation", "Community",
+                   "Present Days", "Absent Days", "Late Days", "Approved Leaves", "Total Overtime"]
         ws.append(headers)
 
-        # Bold Header Row
+        # Bold the last header row
         for cell in ws[ws.max_row]:
             cell.font = bold_font
 
-        # Write Employee Data
+        # Write data row for each employee
         for emp in employees:
             ws.append([
                 emp.id,
@@ -2828,22 +2873,23 @@ class GenerateReportView(APIView):
                 emp.name,
                 emp.designation.desig_name if emp.designation else "N/A",
                 emp.community.community_name if emp.community else "N/A",
-                emp.work_days or 0,
+                emp.present_days or 0,
                 emp.absent_days or 0,
+                emp.late_days or 0,
                 emp.approved_leaves or 0,
                 str(emp.total_overtime).split('.')[0] if emp.total_overtime else '0:00'
             ])
 
-        # Create response with Excel file
+        # Create HTTP response with Excel content
         response = HttpResponse(
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
         response['Content-Disposition'] = f'attachment; filename=HR_Attendance_Report_{start_date}_to_{end_date}.xlsx'
 
-        # Save workbook to response
+        # Save workbook into response
         wb.save(response)
-        
-        return response  
+
+        return response
 
 
 from datetime import datetime, timedelta
