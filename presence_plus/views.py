@@ -527,28 +527,11 @@ class PublicHolidayView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        """Create a new Public Holiday Policy"""
         serializer = PublicHolidaySerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
-            return Response({"message": "Public holiday policy created successfully!", "data": serializer.data}, status=status.HTTP_201_CREATED)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    def get(self, request):
-        """Retrieve Public Holidays, with optional year filtering"""
-        year = request.query_params.get("year")
-        
-        holidays = PublicHoliday.objects.all()
-
-        if year:
-            try:
-                year = int(year)
-                holidays = holidays.filter(date__year=year)
-            except ValueError:
-                return Response({"error": "Invalid year format!"}, status=status.HTTP_400_BAD_REQUEST)
-
-        serializer = PublicHolidaySerializer(holidays, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class LeaveTypeCreateView(APIView):
     authentication_classes = [JWTAuthentication]
