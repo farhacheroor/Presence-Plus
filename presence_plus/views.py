@@ -1171,19 +1171,19 @@ class AttendanceListView(APIView):
             attendance_requests = AttendanceRequest.objects.filter(employee=employee)
 
             # Serialize Attendance data
-            attendance_data = [
-                {
-                    "id": att.id,
-                    "date": att.date,
-                    "check_in": att.check_in,
-                    "check_out": att.check_out,
-                    "status": "Approved",  # Since Attendance records are already approved
-                    "work_type":  getattr(att, "work_type", None),
-                    "location": getattr(att, "location", None),
-                    "image": request.build_absolute_uri(att.image.url) if hasattr(att, "image") and att.image else None,
-                }
-                for att in attendance_records
-            ]
+            # attendance_data = [
+            #     {
+            #         "id": att.id,
+            #         "date": att.date,
+            #         "check_in": att.check_in,
+            #         "check_out": att.check_out,
+            #         "status": "Approved",  # Since Attendance records are already approved
+            #         "work_type":  getattr(att, "work_type", None),
+            #         "location": getattr(att, "location", None),
+            #         "image": request.build_absolute_uri(att.image.url) if hasattr(att, "image") and att.image else None,
+            #     }
+            #     for att in attendance_records
+            # ]
 
             # Serialize Attendance Request data
             request_data = [
@@ -1201,7 +1201,7 @@ class AttendanceListView(APIView):
             ]
 
             # Combine both lists
-            response_data = attendance_data + request_data
+            response_data =  request_data
 
             return Response(response_data, status=status.HTTP_200_OK)
 
@@ -1550,7 +1550,7 @@ class HRDashboardView(APIView):
             employee__in=hr_employees
         ).count()
 
-        attendance_requests = AttendanceRequest.object.filter(
+        attendance_requests = AttendanceRequest.objects.filter(
             status__iexact="pending",
             employee__in=hr_employees
         ).count()
@@ -2226,13 +2226,21 @@ class ShiftColleaguesView(APIView):
     authentication_classes = [JWTAuthentication]
 
     def get(self, request, date):
-        """Get colleagues assigned to the same shift on a given date."""
+        """Get colleagues assigned to the same shift on a given date, excluding the logged-in employee."""
         employee = request.user.employee
-        assignments = EmployeeShiftAssignment.objects.filter(
-            date=date, 
-            shift__in=EmployeeShiftAssignment.objects.filter(employee=employee, date=date).values_list('shift', flat=True)
-        )
-        serializer = EmployeeShiftAssignmentSerializer(assignments, many=True)
+
+        # Get the shift(s) the logged-in employee is assigned to on that date
+        shifts = EmployeeShiftAssignment.objects.filter(
+            employee=employee, date=date
+        ).values_list('shift', flat=True)
+
+        # Get all assignments for the same shift(s) on that date, excluding the logged-in employee
+        colleague_assignments = EmployeeShiftAssignment.objects.filter(
+            date=date,
+            shift__in=shifts
+        ).exclude(employee=employee)
+
+        serializer = EmployeeShiftAssignmentSerializer(colleague_assignments, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
 ###########     employee dashboard shift view   #############
@@ -2830,19 +2838,6 @@ class GenerateReportView(APIView):
         ws.title = "HR Attendance Report"
 
         bold_font = Font(bold=True)
-
-        ws.append(["HR Attendance Report"])
-        ws.append([f"Report Duration: {start_date} to {end_date}"])
-        ws.append([])
-
-        ws.append(["Total Employees", total_employees])
-        ws.append(["Total Present Days", attendance_stats['total_present'] or 0])
-        ws.append(["Total Absent Days", attendance_stats['total_absent'] or 0])
-        ws.append(["Total Late Days", attendance_stats['total_late'] or 0])
-        ws.append(["Attendance Percentage", f"{attendance_percentage}%"])
-        ws.append(["Pending Attendance Requests", pending_attendance])
-        ws.append(["Pending Leave Requests", pending_leaves])
-        ws.append([])
 
         headers = ["Emp ID", "Emp Num", "Name", "Designation", "Community",
                    "Present Days", "Absent Days", "Late Days", "Approved Leaves", "Total Overtime"]
