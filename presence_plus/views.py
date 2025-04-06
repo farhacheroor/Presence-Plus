@@ -2441,31 +2441,38 @@ class EmployeeOvertimeDetailView(APIView):
             total_overtime = 0
 
             for overtime in completed_overtime_records:
-                attendance_record = Attendance.objects.filter(
-                    employee=employee, date=overtime.date
-                ).first()
-
-                if attendance_record and attendance_record.check_out:
                     assigned_hours = overtime.hours
-                    actual_worked_seconds = (
-                        datetime.combine(overtime.date, attendance_record.check_out) -
-                        datetime.combine(overtime.date, attendance_record.check_in)
-                    ).seconds
-                    actual_worked_hours = actual_worked_seconds / 3600
+                    actual_worked_hours = 0
+                    overtime_status = "Pending"  # Default for today/future
 
-                    overtime_status = "Completed" if actual_worked_hours >= assigned_hours else "Incomplete"
+                    attendance_record = Attendance.objects.filter(
+                        employee=employee, date=overtime.date
+                    ).first()
+
+                    # Only evaluate if the overtime date is before today
+                    if overtime.date < date.today():
+                        if attendance_record and attendance_record.check_in and attendance_record.check_out:
+                            actual_worked_seconds = (
+                                datetime.combine(overtime.date, attendance_record.check_out) -
+                                datetime.combine(overtime.date, attendance_record.check_in)
+                            ).seconds
+                            actual_worked_hours = actual_worked_seconds / 3600
+                            overtime_status = "Completed" if actual_worked_hours >= assigned_hours else "Incomplete"
+                        else:
+                            overtime_status = "Incomplete"
+                    elif overtime.date == date.today():
+                        overtime_status = "Pending"
 
                     if overtime_status == "Completed":
-                        total_overtime += assigned_hours  # Only add to total if completed
+                        total_overtime += assigned_hours
 
                     filtered_overtime.append({
                         "date": overtime.date.strftime("%d %b"),
                         "assigned_hours": assigned_hours,
                         "actual_hours": round(actual_worked_hours, 2),
                         "status": overtime_status,
-                        "reason": overtime.reason if hasattr(overtime, 'reason') else "No reason provided"
+                        "reason": getattr(overtime, 'reason', '') or "No reason provided"
                     })
-
 
             return Response({
                 "name": employee.name,
@@ -2474,7 +2481,7 @@ class EmployeeOvertimeDetailView(APIView):
                 "total_overtime": total_overtime,
                 "overtime_history": filtered_overtime
             }, status=200)
-
+        
         except Exception as e:
             return Response({"error": f"Internal Server Error: {str(e)}"}, status=500)
 

@@ -301,3 +301,8 @@ CELERY_TASK_ALWAYS_EAGER = False
 CELERY_TASK_SERIALIZER = 'json'
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-59r8tq7^e*1s^x=6#9$bwyq+()03$fs_sc^^xgxw5qkz2skcsi')
+
+REST_FRAMEWORK = {
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,
+}
