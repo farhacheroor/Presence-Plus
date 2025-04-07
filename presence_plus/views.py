@@ -43,20 +43,19 @@ User = get_user_model()
 
 class CreateUserView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]  # Ensure only authenticated users can access
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         emp_num = request.data.get("emp_num")
         name = request.data.get("name")
         department = request.data.get("department") 
-        designation_id = request.data.get("designation")  # Get designation ID
-        community_id = request.data.get("community")  # Get community ID
+        designation_id = request.data.get("designation")
+        community_id = request.data.get("community")
         email = request.data.get("email")  
         hire_date = request.data.get("hire_date")
         password = request.data.get("password")  
         username = email  
 
-        # Get the current user's role
         current_role = getattr(request.user, "role", "").lower() if request.user else None
 
         if current_role == "admin":
@@ -69,7 +68,15 @@ class CreateUserView(APIView):
         if not all([email, department, name, emp_num, hire_date, designation_id, community_id]):
             return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validate hire_date format
+        if designation_id == 'none' or community_id == 'none':
+            return Response({"error": "Please select valid Designation and Community"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            designation_id = int(designation_id)
+            community_id = int(community_id)
+        except ValueError:
+            return Response({"error": "Designation and Community must be valid integers."}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             hire_date = now().strptime(hire_date, "%Y-%m-%d").date()
         except ValueError:
@@ -81,7 +88,6 @@ class CreateUserView(APIView):
         if Employee.objects.filter(emp_num=emp_num).exists():
             return Response({"error": "Employee Number already exists"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Retrieve the selected designation
         designation_obj = get_object_or_404(Designation, id=designation_id)
         community_obj = get_object_or_404(Community, id=community_id)
 
@@ -98,24 +104,22 @@ class CreateUserView(APIView):
                     username=username
                 )
 
-                # Create Employee record
                 Employee.objects.create(
                     user=user,
                     name=name,
                     emp_num=emp_num,
                     hire_date=hire_date,
                     designation=designation_obj,
-                    community=community_obj # Assign existing designation
+                    community=community_obj
                 )
 
-                # Send email with login credentials
                 subject = "Your Account Has Been Created"
                 message = f"""
                 Hello {name},
 
                 Your account has been successfully created.
 
-                **Login Credentials:**
+                Login Credentials:
                 - Email: {email}
                 - Password: {password}
 
