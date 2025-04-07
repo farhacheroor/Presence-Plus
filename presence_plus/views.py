@@ -2772,7 +2772,8 @@ class GenerateReportView(APIView):
 
     def get(self, request):
         try:
-            # Parse query parameters
+            # Get response format and filters
+            response_format = request.query_params.get('format', 'json')
             start_date_str = request.query_params.get('start_date')
             end_date_str = request.query_params.get('end_date')
             department_id = request.query_params.get('department')
@@ -2791,7 +2792,7 @@ class GenerateReportView(APIView):
                 'designation', 'community', 'user'
             )
 
-            # Apply department filter if provided and not 'All'
+            # Apply department filter if provided
             if department_id and department_id != 'All':
                 employees = employees.filter(community_id=department_id)
 
@@ -2815,7 +2816,7 @@ class GenerateReportView(APIView):
             pending_leaves = LeaveRequest.objects.filter(status='Pending').count()
 
             # Get all departments for the filter dropdown
-            departments = Community.objects.all().values('id', 'community_name')
+            departments = list(Community.objects.all().values('id', 'community_name'))
 
             # Annotate basic stats per employee
             employees = employees.annotate(
@@ -2841,29 +2842,33 @@ class GenerateReportView(APIView):
                 )
             )
 
-            # Calculate overtime for each employee
+            # Prepare employee data with overtime calculation
             employee_data = []
             for emp in employees:
                 total_overtime_seconds = 0
-                attendance_qs = Attendance.objects.filter(employee=emp, date__range=[start_date, end_date])
+                attendance_qs = Attendance.objects.filter(
+                    employee=emp, 
+                    date__range=[start_date, end_date]
+                )
 
                 for att in attendance_qs:
                     if att.check_in and att.check_out:
                         work_duration = (
-                            datetime.combine(att.date, att.check_out) - datetime.combine(att.date, att.check_in)
+                            datetime.combine(att.date, att.check_out) - 
+                            datetime.combine(att.date, att.check_in)
                         ).total_seconds()
                         overtime = max(0, work_duration - 8 * 3600)  # over 8 hrs only
                         total_overtime_seconds += overtime
 
                 # Format overtime as HH:MM:SS
-                total_overtime = str(timedelta(seconds=total_overtime_seconds)).split('.')[0]
+                total_overtime = str(timedelta(seconds=total_overtime_seconds))
                 if total_overtime == '0:00:00':
                     total_overtime = '0:00'
 
                 employee_data.append({
                     'id': emp.id,
                     'emp_num': emp.emp_num,
-                    'name': emp.user.get_full_name(),
+                    'name': emp.name,
                     'designation': {'desig_name': emp.designation.desig_name} if emp.designation else None,
                     'community': {'community_name': emp.community.community_name} if emp.community else None,
                     'present_days': emp.present_days or 0,
@@ -2873,64 +2878,72 @@ class GenerateReportView(APIView):
                     'total_overtime': total_overtime
                 })
 
-            # Return JSON response compatible with frontend
-            return Response({
-                'status': 'success',
-                'data': {
-                    'employee_data': employee_data,
-                    'total_employees': total_employees,
-                    'attendance_percentage': attendance_percentage,
-                    'attendance_stats': {
-                        'total_present': attendance_stats['total_present'] or 0,
-                        'total_absent': attendance_stats['total_absent'] or 0,
-                        'total_late': attendance_stats['total_late'] or 0
-                    },
-                    'pending_attendance': pending_attendance,
-                    'pending_leaves': pending_leaves,
-                    'departments': departments,
-                    'start_date': start_date.strftime('%Y-%m-%d'),
-                    'end_date': end_date.strftime('%Y-%m-%d')
-                }
-            })
+            # Return in requested format
+            if response_format == 'excel':
+                return self.generate_excel_report(
+                    start_date, end_date, total_employees, attendance_stats,
+                    attendance_percentage, pending_attendance, pending_leaves, employee_data
+                )
+            else:
+                return Response({
+                    'status': 'success',
+                    'data': {
+                        'employee_data': employee_data,
+                        'total_employees': total_employees,
+                        'attendance_percentage': attendance_percentage,
+                        'attendance_stats': {
+                            'total_present': attendance_stats['total_present'] or 0,
+                            'total_absent': attendance_stats['total_absent'] or 0,
+                            'total_late': attendance_stats['total_late'] or 0
+                        },
+                        'pending_attendance': pending_attendance,
+                        'pending_leaves': pending_leaves,
+                        'departments': departments,
+                        'start_date': start_date.strftime('%Y-%m-%d'),
+                        'end_date': end_date.strftime('%Y-%m-%d')
+                    }
+                })
 
         except Exception as e:
             return Response({'status': 'error', 'message': str(e)}, status=500)
 
     def generate_excel_report(self, start_date, end_date, total_employees, attendance_stats,
-                              attendance_percentage, pending_attendance, pending_leaves, employees):
+                            attendance_percentage, pending_attendance, pending_leaves, employees):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "HR Attendance Report"
 
-        bold_font = Font(bold=True)
-
-        # Headers
+        # Add headers
         headers = ["Emp ID", "Emp Num", "Name", "Designation", "Community",
-                   "Present Days", "Absent Days", "Late Days", "Approved Leaves", "Total Overtime"]
+                  "Present Days", "Absent Days", "Late Days", "Approved Leaves", "Total Overtime"]
         ws.append(headers)
+        
+        # Style headers
+        bold_font = Font(bold=True)
         for cell in ws[1]:
             cell.font = bold_font
 
-        # Populate employee data
+        # Add data rows
         for emp in employees:
             ws.append([
-                emp.id,
-                emp.emp_num,
-                emp.name,
-                emp.designation.desig_name if emp.designation else "N/A",
-                emp.community.community_name if emp.community else "N/A",
-                emp.present_days or 0,
-                emp.absent_days or 0,
-                emp.late_days or 0,
-                emp.approved_leaves or 0,
-                str(emp.total_overtime).split('.')[0] if emp.total_overtime else '0:00'
+                emp['id'],
+                emp['emp_num'],
+                emp['name'],
+                emp['designation']['desig_name'] if emp['designation'] else "N/A",
+                emp['community']['community_name'] if emp['community'] else "N/A",
+                emp['present_days'],
+                emp['absent_days'],
+                emp['late_days'],
+                emp['approved_leaves'],
+                emp['total_overtime']
             ])
 
-        # Finalize response
+        # Create HTTP response
         response = HttpResponse(
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            status=200
         )
-        response['Content-Disposition'] = f'attachment; filename=HR_Attendance_Report_{start_date}_to_{end_date}.xlsx'
+        response['Content-Disposition'] = f'attachment; filename=HR_Report_{start_date}_to_{end_date}.xlsx'
         wb.save(response)
         return response
 
