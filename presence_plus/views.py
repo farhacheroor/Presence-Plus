@@ -2306,59 +2306,54 @@ class OvertimeSummaryView(APIView):
     def get(self, request):
         today = date.today()
 
-        # 1. Calculate total overtime stats
-        total_completed = Overtime.objects.filter(status="completed").aggregate(
-            total_hours=Sum('hours')
-        )['total_hours'] or 0
-        
-        total_upcoming = Overtime.objects.filter(status="upcoming").aggregate(
-            total_hours=Sum('hours')
-        )['total_hours'] or 0
+        # 1. Calculate totals for each status type
+        status_totals = Overtime.objects.filter(
+            status__in=["completed", "upcoming"]
+        ).values('status').annotate(
+            total_hours=Sum('hours'),
+            employee_count=Count('employee', distinct=True)
+        )
 
-        # 2. Employee counts for today
-        employees_completed_today = Overtime.objects.filter(
-            date=today, 
-            status="completed"
-        ).values('employee').distinct().count()
-        
-        employees_upcoming_today = Overtime.objects.filter(
+        # Convert to more usable format
+        totals = {item['status']: item for item in status_totals}
+
+        # 2. Today's counts
+        today_counts = Overtime.objects.filter(
             date=today,
-            status="upcoming" 
-        ).values('employee').distinct().count()
+            status__in=["completed", "upcoming"]
+        ).values('status').annotate(
+            employee_count=Count('employee', distinct=True)
+        )
 
-        # 3. Get employee overtime lists
-        def get_employee_overtime_data(status):
-            return [
-                {
-                    "employee_id": emp["employee__id"],
-                    "name": emp["employee__name"],
-                    "designation": emp["employee__designation__desig_name"],
-                    "total_hours": emp["total_hours"],
-                    "status": status
-                }
-                for emp in (
-                    Overtime.objects.filter(status=status)
-                    .values('employee__id', 'employee__name', 'employee__designation__desig_name')
-                    .annotate(total_hours=Sum('hours'))
-                    .order_by('-total_hours')
-                )
-            ]
-
-        completed_data = get_employee_overtime_data("completed")
-        upcoming_data = get_employee_overtime_data("upcoming")
+        # 3. Employee lists with overtime
+        employee_data = {}
+        for status in ["completed", "upcoming"]:
+            employee_data[status] = list(
+                Overtime.objects.filter(status=status)
+                .values('employee__id', 'employee__name', 'employee__designation__desig_name')
+                .annotate(total_hours=Sum('hours'))
+                .order_by('-total_hours')
+            )
 
         return Response({
-            "summary": {
-                "total_completed_hours": total_completed,
-                "total_upcoming_hours": total_upcoming,
-                "employees_completed_today": employees_completed_today,
-                "employees_upcoming_today": employees_upcoming_today
+            "totals": {
+                "completed": totals.get("completed", {"total_hours": 0, "employee_count": 0}),
+                "upcoming": totals.get("upcoming", {"total_hours": 0, "employee_count": 0}),
+                "combined": {
+                    "total_hours": (totals.get("completed", {}).get("total_hours", 0) + 
+                                  (totals.get("upcoming", {}).get("total_hours", 0)),
+                    "employee_count": (totals.get("completed", {}).get("employee_count", 0) + 
+                                     (totals.get("upcoming", {}).get("employee_count", 0))
+                }
             },
-            "employee_data": {
-                "completed": completed_data,
-                "upcoming": upcoming_data
-            }
-        }, status=200)
+            "today": {
+                "completed": next(
+                    (item['employee_count'] for item in today_counts if item['status'] == "completed"), 0),
+                "upcoming": next(
+                    (item['employee_count'] for item in today_counts if item['status'] == "upcoming"), 0)
+            },
+            "employees": employee_data
+        })
 
 import openpyxl
 from openpyxl.utils import get_column_letter 
