@@ -2252,18 +2252,19 @@ class ShiftRangeView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
-    # Default color mapping (can be overridden by frontend)
+    # Enhanced color mapping with shift status consideration
     SHIFT_COLORS = {
-        'morning': '#FFEEBA',
-        'afternoon': '#B8DAFF', 
-        'night': '#D8BFD8',
-        'general': '#C3E6CB'
+        'morning': {'active': '#FFEEBA', 'inactive': '#F5F5F5'},
+        'intermediate': {'active': '#B8DAFF', 'inactive': '#E0E0E0'},
+        'night': {'active': '#D8BFD8', 'inactive': '#EDEDED'},
+        'general': {'active': '#C3E6CB', 'inactive': '#DFDFDF'}
     }
 
     def get(self, request):
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         
+        # Validate date parameters
         if not start_date or not end_date:
             return Response(
                 {"error": "Both start_date and end_date parameters are required"},
@@ -2279,51 +2280,62 @@ class ShiftRangeView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Get shifts for the current user in date range
+        # Get active shifts for the current user in date range
         user_shifts = EmployeeShiftAssignment.objects.filter(
             employee=request.user.employee,
             date__gte=start,
-            date__lte=end
+            date__lte=end,
+            shift__status='active'  # Only include active shifts
         ).select_related('shift', 'employee')
 
-        # Get shifts for colleagues (same shifts as user)
+        # Get active shifts for colleagues (same shifts as user)
         colleague_shifts = EmployeeShiftAssignment.objects.filter(
             date__gte=start,
             date__lte=end,
-            shift__in=[s.shift for s in user_shifts]
+            shift__in=[s.shift for s in user_shifts],
+            shift__status='active'  # Only include active shifts
         ).exclude(employee=request.user.employee).select_related('shift', 'employee')
 
-        # Organize data by date
+        # Organize data by date with working hours
         date_map = {}
-        for shift in list(user_shifts) + list(colleague_shifts):
-            date_str = shift.date.strftime('%Y-%m-%d')
+        for shift_assignment in list(user_shifts) + list(colleague_shifts):
+            shift = shift_assignment.shift
+            date_str = shift_assignment.date.strftime('%Y-%m-%d')
+            
             if date_str not in date_map:
                 date_map[date_str] = {
                     'date': date_str,
                     'shifts': {},
-                    'color': self.SHIFT_COLORS.get(shift.shift.shift_type, '#FFFFFF')
+                    'color': self.SHIFT_COLORS.get(shift.shift_type, {}).get(shift.status, '#FFFFFF')
                 }
             
-            if shift.shift.id not in date_map[date_str]['shifts']:
-                date_map[date_str]['shifts'][shift.shift.id] = {
-                    'shift_id': shift.shift.id,
-                    'shift_name': shift.shift.name,
-                    'shift_type': shift.shift.shift_type,
+            if shift.id not in date_map[date_str]['shifts']:
+                date_map[date_str]['shifts'][shift.id] = {
+                    'shift_id': shift.id,
+                    'shift_name': shift.shift_type,
+                    'shift_type': shift.shift_type,
+                    'status': shift.status,
+                    'start_time': shift.start_time.strftime('%H:%M'),
+                    'end_time': shift.end_time.strftime('%H:%M'),
                     'employees': []
                 }
             
-            date_map[date_str]['shifts'][shift.shift.id]['employees'].append({
-                'employee_id': shift.employee.id,
-                'name': shift.employee.user.get_full_name(),
-                'is_current_user': shift.employee == request.user.employee
+            date_map[date_str]['shifts'][shift.id]['employees'].append({
+                'employee_id': shift_assignment.employee.id,
+                'name': shift_assignment.employee.user.get_full_name(),
+                'is_current_user': shift_assignment.employee == request.user.employee
             })
 
-        # Convert to list format
-        result = list(date_map.values())
+        # Convert to list format and sort by date
+        result = sorted(list(date_map.values()), key=lambda x: x['date'])
         
         return Response({
             'shift_dates': result,
-            'color_mapping': self.SHIFT_COLORS
+            'color_mapping': self.SHIFT_COLORS,
+            'date_range': {
+                'start_date': start_date,
+                'end_date': end_date
+            }
         }, status=status.HTTP_200_OK)
 ###########     employee dashboard shift view   #############
 
