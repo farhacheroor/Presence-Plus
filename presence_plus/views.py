@@ -2335,15 +2335,25 @@ class OvertimeSummaryView(APIView):
                 .order_by('-total_hours')
             )
 
+        # Calculate combined totals
+        completed_hours = totals.get("completed", {}).get("total_hours", 0) or 0
+        upcoming_hours = totals.get("upcoming", {}).get("total_hours", 0) or 0
+        completed_count = totals.get("completed", {}).get("employee_count", 0) or 0
+        upcoming_count = totals.get("upcoming", {}).get("employee_count", 0) or 0
+
         return Response({
             "totals": {
-                "completed": totals.get("completed", {"total_hours": 0, "employee_count": 0}),
-                "upcoming": totals.get("upcoming", {"total_hours": 0, "employee_count": 0}),
+                "completed": {
+                    "total_hours": completed_hours,
+                    "employee_count": completed_count
+                },
+                "upcoming": {
+                    "total_hours": upcoming_hours,
+                    "employee_count": upcoming_count
+                },
                 "combined": {
-                    "total_hours": (totals.get("completed", {}).get("total_hours", 0) + 
-                                  (totals.get("upcoming", {}).get("total_hours", 0)),
-                    "employee_count": (totals.get("completed", {}).get("employee_count", 0) + 
-                                     (totals.get("upcoming", {}).get("employee_count", 0))
+                    "total_hours": completed_hours + upcoming_hours,
+                    "employee_count": completed_count + upcoming_count
                 }
             },
             "today": {
@@ -2353,7 +2363,7 @@ class OvertimeSummaryView(APIView):
                     (item['employee_count'] for item in today_counts if item['status'] == "upcoming"), 0)
             },
             "employees": employee_data
-        })
+        }, status=200)
 
 import openpyxl
 from openpyxl.utils import get_column_letter 
