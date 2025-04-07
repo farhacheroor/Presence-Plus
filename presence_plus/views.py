@@ -398,16 +398,17 @@ class AttendanceStatsView(APIView):
             last_day = date(current_year, month, calendar.monthrange(current_year, month)[1])
 
             monthly_attendance = Attendance.objects.filter(date__range=(first_day, last_day))
+            total_count = monthly_attendance.count()
 
             present_count = monthly_attendance.filter(status="present").count()
             absent_count = monthly_attendance.filter(status="absent").count()
             late_count = monthly_attendance.filter(status="late").count()
 
             attendance_summary.append({
-                "month": first_day.strftime("%B"),  # 'January', 'February', etc.
-                "present": present_count,
-                "absent": absent_count,
-                "late": late_count
+                "month": first_day.strftime("%B"),
+                "present_percentage": round((present_count / total_count) * 100, 2) if total_count else 0,
+                "absent_percentage": round((absent_count / total_count) * 100, 2) if total_count else 0,
+                "late_percentage": round((late_count / total_count) * 100, 2) if total_count else 0
             })
 
         return Response({
