@@ -2337,6 +2337,71 @@ class ShiftRangeView(APIView):
                 'end_date': end_date
             }
         }, status=status.HTTP_200_OK)
+    
+class HRShiftRangeView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    # Single color for all assigned dates in HR view
+    ASSIGNED_COLOR = '#4CAF50'  # Green color for assigned dates
+
+    def get(self, request):
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        
+        # Validate date parameters
+        if not start_date or not end_date:
+            return Response(
+                {"error": "Both start_date and end_date parameters are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            start = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        except ValueError:
+            return Response(
+                {"error": "Invalid date format. Use YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get all assigned shifts in date range (HR can see all)
+        assigned_shifts = EmployeeShiftAssignment.objects.filter(
+            date__gte=start,
+            date__lte=end,
+            shift__status='active'  # Only include active shifts
+        ).select_related('shift', 'employee')
+
+        # Organize data by date - simplified for HR view
+        assigned_dates = set()
+        shift_details = []
+        
+        for shift_assignment in assigned_shifts:
+            date_str = shift_assignment.date.strftime('%Y-%m-%d')
+            assigned_dates.add(date_str)
+            
+            shift_details.append({
+                'date': date_str,
+                'shift_id': shift_assignment.shift.id,
+                'shift_type': shift_assignment.shift.shift_type,
+                'start_time': shift_assignment.shift.start_time.strftime('%H:%M'),
+                'end_time': shift_assignment.shift.end_time.strftime('%H:%M'),
+                'employee_id': shift_assignment.employee.id,
+                'employee_name': shift_assignment.employee.user.get_full_name()
+            })
+
+        # Convert to list format and sort by date
+        result = sorted([{'date': date, 'color': self.ASSIGNED_COLOR} for date in assigned_dates], 
+                       key=lambda x: x['date'])
+        
+        return Response({
+            'assigned_dates': result,
+            'shift_details': shift_details,
+            'date_range': {
+                'start_date': start_date,
+                'end_date': end_date
+            }
+        }, status=status.HTTP_200_OK)
 ###########     employee dashboard shift view   #############
 
 class EmployeeDasboardShiftView(APIView):
