@@ -2306,63 +2306,37 @@ class OvertimeSummaryView(APIView):
     def get(self, request):
         today = date.today()
 
-        # 1. Calculate totals for each status type
-        status_totals = Overtime.objects.filter(
-            status__in=["completed", "upcoming"]
-        ).values('status').annotate(
-            total_hours=Sum('hours'),
-            employee_count=Count('employee', distinct=True)
+        # 1. Calculate total overtime (only 'Completed' status) for all time
+        total_overtime = Overtime.objects.filter(
+            status__in=["completed", "upcoming"]  # Include both statuses
+        ).aggregate(total_hours=Sum('hours'))['total_hours'] or 0
+
+        # 2. Count number of employees who have completed overtime today
+        employees_on_ot_today = Overtime.objects.filter(date=today, status="completed").values('employee').distinct().count()
+
+        # 3. Get list of employees with their total completed overtime, designation, and ID
+        employees_overtime = (
+            Overtime.objects.filter(status__in=["completed","upcoming"])  # Filter by completed status
+            .values('employee__id', 'employee__name', 'employee__designation__desig_name')
+            .annotate(total_hours=Sum('hours'))
+            .order_by('-total_hours')  # Sort by highest overtime
         )
 
-        # Convert to more usable format
-        totals = {item['status']: item for item in status_totals}
-
-        # 2. Today's counts
-        today_counts = Overtime.objects.filter(
-            date=today,
-            status__in=["completed", "upcoming"]
-        ).values('status').annotate(
-            employee_count=Count('employee', distinct=True)
-        )
-
-        # 3. Employee lists with overtime
-        employee_data = {}
-        for status in ["completed", "upcoming"]:
-            employee_data[status] = list(
-                Overtime.objects.filter(status=status)
-                .values('employee__id', 'employee__name', 'employee__designation__desig_name')
-                .annotate(total_hours=Sum('hours'))
-                .order_by('-total_hours')
-            )
-
-        # Calculate combined totals
-        completed_hours = totals.get("completed", {}).get("total_hours", 0) or 0
-        upcoming_hours = totals.get("upcoming", {}).get("total_hours", 0) or 0
-        completed_count = totals.get("completed", {}).get("employee_count", 0) or 0
-        upcoming_count = totals.get("upcoming", {}).get("employee_count", 0) or 0
+        # 4. Format the response with employee ID
+        employee_data = [
+            {
+                "employee_id": emp["employee__id"],
+                "name": emp["employee__name"],
+                "designation": emp["employee__designation__desig_name"],
+                "total_overtime": emp["total_hours"]
+            }
+            for emp in employees_overtime
+        ]
 
         return Response({
-            "totals": {
-                "completed": {
-                    "total_hours": completed_hours,
-                    "employee_count": completed_count
-                },
-                "upcoming": {
-                    "total_hours": upcoming_hours,
-                    "employee_count": upcoming_count
-                },
-                "combined": {
-                    "total_hours": completed_hours + upcoming_hours,
-                    "employee_count": completed_count + upcoming_count
-                }
-            },
-            "today": {
-                "completed": next(
-                    (item['employee_count'] for item in today_counts if item['status'] == "completed"), 0),
-                "upcoming": next(
-                    (item['employee_count'] for item in today_counts if item['status'] == "upcoming"), 0)
-            },
-            "employees": employee_data
+            "total_overtime": total_overtime,  # Total completed overtime for all time
+            "employees_on_ot_today": employees_on_ot_today,
+            "employees_overtime": employee_data
         }, status=200)
 
 import openpyxl
