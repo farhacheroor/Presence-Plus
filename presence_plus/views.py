@@ -2247,7 +2247,84 @@ class ShiftColleaguesView(APIView):
 
         serializer = EmployeeShiftAssignmentSerializer(colleague_assignments, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
+class ShiftRangeView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    # Default color mapping (can be overridden by frontend)
+    SHIFT_COLORS = {
+        'morning': '#FFEEBA',
+        'afternoon': '#B8DAFF', 
+        'night': '#D8BFD8',
+        'general': '#C3E6CB'
+    }
+
+    def get(self, request):
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        
+        if not start_date or not end_date:
+            return Response(
+                {"error": "Both start_date and end_date parameters are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            start = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        except ValueError:
+            return Response(
+                {"error": "Invalid date format. Use YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get shifts for the current user in date range
+        user_shifts = EmployeeShiftAssignment.objects.filter(
+            employee=request.user.employee,
+            date__gte=start,
+            date__lte=end
+        ).select_related('shift', 'employee')
+
+        # Get shifts for colleagues (same shifts as user)
+        colleague_shifts = EmployeeShiftAssignment.objects.filter(
+            date__gte=start,
+            date__lte=end,
+            shift__in=[s.shift for s in user_shifts]
+        ).exclude(employee=request.user.employee).select_related('shift', 'employee')
+
+        # Organize data by date
+        date_map = {}
+        for shift in list(user_shifts) + list(colleague_shifts):
+            date_str = shift.date.strftime('%Y-%m-%d')
+            if date_str not in date_map:
+                date_map[date_str] = {
+                    'date': date_str,
+                    'shifts': {},
+                    'color': self.SHIFT_COLORS.get(shift.shift.shift_type, '#FFFFFF')
+                }
+            
+            if shift.shift.id not in date_map[date_str]['shifts']:
+                date_map[date_str]['shifts'][shift.shift.id] = {
+                    'shift_id': shift.shift.id,
+                    'shift_name': shift.shift.name,
+                    'shift_type': shift.shift.shift_type,
+                    'employees': []
+                }
+            
+            date_map[date_str]['shifts'][shift.shift.id]['employees'].append({
+                'employee_id': shift.employee.id,
+                'name': shift.employee.user.get_full_name(),
+                'is_current_user': shift.employee == request.user.employee
+            })
+
+        # Convert to list format
+        result = list(date_map.values())
+        
+        return Response({
+            'shift_dates': result,
+            'color_mapping': self.SHIFT_COLORS
+        }, status=status.HTTP_200_OK)
 ###########     employee dashboard shift view   #############
 
 class EmployeeDasboardShiftView(APIView):
