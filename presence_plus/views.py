@@ -68,8 +68,8 @@ class CreateUserView(APIView):
         if not all([email, department, name, emp_num, hire_date, designation_id, community_id]):
             return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if designation_id == 'none' or community_id == 'none':
-            return Response({"error": "Please select valid Designation and Community"}, status=status.HTTP_400_BAD_REQUEST)
+        # if designation_id == 'none' or community_id == 'none':
+        #     return Response({"error": "Please select valid Designation and Community"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             designation_id = int(designation_id)
