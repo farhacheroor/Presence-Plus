@@ -2779,11 +2779,14 @@ class GenerateReportView(APIView):
             if end_date_str:
                 end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
 
-            # Employees with 'employee' role
-            employees = Employee.objects.filter(user__role='employee').select_related('designation', 'community', 'user')
+            # Get employees with 'employee' role
+            employees = Employee.objects.filter(user__role='employee').select_related(
+                'designation', 'community', 'user'
+            )
 
             total_employees = employees.count()
 
+            # Global stats
             attendance_stats = Attendance.objects.filter(
                 date__range=[start_date, end_date],
                 employee__in=employees
@@ -2800,7 +2803,7 @@ class GenerateReportView(APIView):
             pending_attendance = AttendanceRequest.objects.filter(status='pending').count()
             pending_leaves = LeaveRequest.objects.filter(status='Pending').count()
 
-            # Annotate employee-specific attendance stats
+            # Annotate basic stats per employee
             employees = employees.annotate(
                 present_days=Count(
                     'attendance',
@@ -2821,38 +2824,51 @@ class GenerateReportView(APIView):
                         leaverequest__start_date__lte=end_date,
                         leaverequest__end_date__gte=start_date
                     )
-                ),
-                total_overtime=Sum(
-                    ExpressionWrapper(
-                        (F('attendance__check_out') - F('attendance__check_in') - timedelta(hours=8)),
-                        output_field=DurationField()
-                    ),
-                    filter=Q(attendance__date__range=[start_date, end_date])
                 )
             )
 
-            return self.generate_excel_report(start_date, end_date, total_employees, attendance_stats,
-                                              attendance_percentage, pending_attendance, pending_leaves, employees)
+            # Manually compute total overtime
+            employee_data = []
+            for emp in employees:
+                total_overtime_seconds = 0
+                attendance_qs = Attendance.objects.filter(employee=emp, date__range=[start_date, end_date])
+
+                for att in attendance_qs:
+                    if att.check_in and att.check_out:
+                        work_duration = (
+                            datetime.combine(att.date, att.check_out) - datetime.combine(att.date, att.check_in)
+                        ).total_seconds()
+                        overtime = max(0, work_duration - 8 * 3600)  # over 8 hrs only
+                        total_overtime_seconds += overtime
+
+                emp.total_overtime = timedelta(seconds=total_overtime_seconds)
+                employee_data.append(emp)
+
+            # Return Excel report
+            return self.generate_excel_report(
+                start_date, end_date, total_employees, attendance_stats,
+                attendance_percentage, pending_attendance, pending_leaves, employee_data
+            )
 
         except Exception as e:
             return Response({'error': str(e)}, status=500)
 
     def generate_excel_report(self, start_date, end_date, total_employees, attendance_stats,
                               attendance_percentage, pending_attendance, pending_leaves, employees):
-
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "HR Attendance Report"
 
         bold_font = Font(bold=True)
 
+        # Headers
         headers = ["Emp ID", "Emp Num", "Name", "Designation", "Community",
                    "Present Days", "Absent Days", "Late Days", "Approved Leaves", "Total Overtime"]
         ws.append(headers)
-
-        for cell in ws[ws.max_row]:
+        for cell in ws[1]:
             cell.font = bold_font
 
+        # Populate employee data
         for emp in employees:
             ws.append([
                 emp.id,
@@ -2867,6 +2883,7 @@ class GenerateReportView(APIView):
                 str(emp.total_overtime).split('.')[0] if emp.total_overtime else '0:00'
             ])
 
+        # Finalize response
         response = HttpResponse(
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
