@@ -2387,7 +2387,7 @@ class HRShiftRangeView(APIView):
                 'start_time': shift_assignment.shift.start_time.strftime('%H:%M'),
                 'end_time': shift_assignment.shift.end_time.strftime('%H:%M'),
                 'employee_id': shift_assignment.employee.id,
-                'employee_name': shift_assignment.employee.user.get_full_name()
+                'employee_name': shift_assignment.employee.name()
             })
 
         # Convert to list format and sort by date
