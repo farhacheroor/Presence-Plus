@@ -2343,7 +2343,7 @@ class HRShiftRangeView(APIView):
     authentication_classes = [JWTAuthentication]
 
     # Single color for all assigned dates in HR view
-    ASSIGNED_COLOR = '#4CAF50'  # Green color for assigned dates
+    ASSIGNED_COLOR = '#00008B'  # Green color for assigned dates
 
     def get(self, request):
         start_date = request.query_params.get('start_date')
@@ -2357,20 +2357,23 @@ class HRShiftRangeView(APIView):
             )
             
         try:
-            start = datetime.strptime(start_date, '%Y-%m-%d').date()
-            end = datetime.strptime(end_date, '%Y-%m-%d').date()
-        except ValueError:
+            assigned_shifts = EmployeeShiftAssignment.objects.filter(
+                date__gte=start_date,
+                date__lte=end_date,
+                shift__status='active'
+            ).select_related('shift', 'employee')
+        except Exception as e:
             return Response(
-                {"error": "Invalid date format. Use YYYY-MM-DD"},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": f"Database error: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        # Get all assigned shifts in date range (HR can see all)
-        assigned_shifts = EmployeeShiftAssignment.objects.filter(
-            date__gte=start,
-            date__lte=end,
-            shift__status='active'  # Only include active shifts
-        ).select_related('shift', 'employee')
+        # # Get all assigned shifts in date range (HR can see all)
+        # assigned_shifts = EmployeeShiftAssignment.objects.filter(
+        #     date__gte=start,
+        #     date__lte=end,
+        #     shift__status='active'  # Only include active shifts
+        # ).select_related('shift', 'employee')
 
         # Organize data by date - simplified for HR view
         assigned_dates = set()
