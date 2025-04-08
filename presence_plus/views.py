@@ -2343,7 +2343,7 @@ class HRShiftRangeView(APIView):
     authentication_classes = [JWTAuthentication]
 
     # Single color for all assigned dates in HR view
-    ASSIGNED_COLOR = '#00008B'  # Green color for assigned dates
+    ASSIGNED_COLOR = '#00008B'  # Blue color for assigned dates
 
     def get(self, request):
         start_date = request.query_params.get('start_date')
@@ -2357,23 +2357,20 @@ class HRShiftRangeView(APIView):
             )
             
         try:
-            assigned_shifts = EmployeeShiftAssignment.objects.filter(
-                date__gte=start_date,
-                date__lte=end_date,
-                shift__status='active'
-            ).select_related('shift', 'employee')
-        except Exception as e:
+            start = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        except ValueError:
             return Response(
-                {"error": f"Database error: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": "Invalid date format. Use YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
-        # # Get all assigned shifts in date range (HR can see all)
-        # assigned_shifts = EmployeeShiftAssignment.objects.filter(
-        #     date__gte=start,
-        #     date__lte=end,
-        #     shift__status='active'  # Only include active shifts
-        # ).select_related('shift', 'employee')
+        # Get all assigned shifts in date range (HR can see all)
+        assigned_shifts = EmployeeShiftAssignment.objects.filter(
+            date__gte=start,
+            date__lte=end,
+            shift__status='active'  # Only include active shifts
+        ).select_related('shift', 'employee')
 
         # Organize data by date - simplified for HR view
         assigned_dates = set()
@@ -2390,7 +2387,7 @@ class HRShiftRangeView(APIView):
                 'start_time': shift_assignment.shift.start_time.strftime('%H:%M'),
                 'end_time': shift_assignment.shift.end_time.strftime('%H:%M'),
                 'employee_id': shift_assignment.employee.id,
-                'employee_name': shift_assignment.employee.name()
+                'employee_name': shift_assignment.employee.user.get_full_name()
             })
 
         # Convert to list format and sort by date
