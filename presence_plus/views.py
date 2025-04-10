@@ -1625,11 +1625,25 @@ class ManualAttendanceView(generics.CreateAPIView):
     authentication_classes = [JWTAuthentication]
 
     def create(self, request, *args, **kwargs):
-        """Handles manual attendance creation."""
+        """Handles manual attendance creation with duplicate prevention."""
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
+            employee = serializer.validated_data.get("employee")
+            date = serializer.validated_data.get("date")
+
+            # Check if attendance already exists for this employee and date
+            if Attendance.objects.filter(employee=employee, date=date).exists():
+                return Response(
+                    {"error": f"Attendance already exists for {employee.name} on {date}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             serializer.save()
-            return Response({"message": "Attendance recorded successfully", "data": serializer.data}, status=status.HTTP_201_CREATED)
+            return Response(
+                {"message": "Attendance recorded successfully", "data": serializer.data},
+                status=status.HTTP_201_CREATED
+            )
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     
