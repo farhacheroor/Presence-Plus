@@ -2814,7 +2814,7 @@ class HRAttendanceView(APIView):
                 ),
                 total_overtime=Sum(
                     ExpressionWrapper(
-                        F('attendance__check_out') - F('attendance__check_in') - timedelta(hours=8),
+                        F('attendance__check_out') - F('attendance__check_in') ,
                         output_field=DurationField()
                     ),
                     filter=Q(attendance__date__range=[start_date, end_date]),
@@ -2826,9 +2826,15 @@ class HRAttendanceView(APIView):
             for emp in employees:
                 # Format overtime hours properly
                 if emp.total_overtime:
+    # Subtract 8 hours per working day to get actual overtime
                     total_seconds = emp.total_overtime.total_seconds()
-                    hours = int(total_seconds // 3600)
-                    minutes = int((total_seconds % 3600) // 60)
+                    expected_seconds = emp.work_days * 8 * 3600
+                    overtime_seconds = total_seconds - expected_seconds
+
+                    overtime_seconds = max(overtime_seconds, 0)  # Prevent negatives
+
+                    hours = int(overtime_seconds // 3600)
+                    minutes = int((overtime_seconds % 3600) // 60)
                     overtime_str = f"{hours}:{minutes:02d}"
                 else:
                     overtime_str = "0:00"
