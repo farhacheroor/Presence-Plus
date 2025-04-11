@@ -1470,7 +1470,7 @@ class EmployeeLeaveBalanceView(APIView):
             leave_requests = LeaveRequest.objects.filter(
                 employee=employee,
                 leave_policy=leave_policy,
-                status__in=["Approved", "Cancel Rejected"],
+                status__in=["Approved", "Cancel Rejected","Accepted"],
                 cancellation_request=False
             )
 
@@ -2814,7 +2814,7 @@ class HRAttendanceView(APIView):
                 ),
                 total_overtime=Sum(
                     ExpressionWrapper(
-                        F('attendance__check_out') - F('attendance__check_in') ,
+                        F('attendance__check_out') - F('attendance__check_in') - timedelta(hours=8) ,
                         output_field=DurationField()
                     ),
                     filter=Q(attendance__date__range=[start_date, end_date]),
