@@ -1862,7 +1862,7 @@ class LeaveHistoryView(APIView):
                 # Admin can view HRs' leave history
                 leave_history = LeaveRequest.objects.filter(
                     employee__user__role="hr",  
-                    status__in=["Approved", "Cancel Rejected", "approved"]
+                    status__in=["Approved", "Cancel Rejected", "approved","Accepted"]
                 ).order_by("-start_date")
 
             else:
