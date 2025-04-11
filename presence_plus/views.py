@@ -817,7 +817,10 @@ class LeaveBalanceSummaryView(APIView):
             available_leave = total_leave - used_leave_from_balance
 
             # Get leave requests by status
-            approved_leaves = LeaveRequest.objects.filter(employee=employee, status="Accepted")
+            approved_leaves = LeaveRequest.objects.filter(
+                employee=employee,
+                status__in=["Accepted", "Approved"]
+            )
             rejected_leaves = LeaveRequest.objects.filter(employee=employee, status="Rejected")
             canceled_leaves = LeaveRequest.objects.filter(employee=employee, status="Cancelled")
 
